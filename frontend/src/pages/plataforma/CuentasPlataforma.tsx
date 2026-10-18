@@ -35,7 +35,7 @@ export default function CuentasPlataforma() {
       <Cuentas roles={["PLATAFORMA"]} titulo="Equipo AviSmart" descripcion="Tendrán los mismos permisos que tú." />
       <Panel
         titulo="Notificaciones por Telegram"
-        descripcion="Las alertas siempre se guardan en el sistema, aunque Telegram no esté disponible."
+        descripcion="Canal de la plataforma (TELEGRAM_CHAT_ID): aquí llegan los avisos de solicitudes nuevas confirmadas. Las alertas de los clientes van solo al chat que cada cliente vincula."
         acciones={telegram && <Estado valor={telegram.configurado ? "ACTIVO" : "INACTIVO"} texto={telegram.configurado ? "Configurado" : "No configurado"} />}
       >
         {telegram?.configurado ? (

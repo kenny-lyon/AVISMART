@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { inicio } from "../api";
 import { useAuth } from "../auth";
+import CampoClave from "../components/CampoClave";
 
 export default function CambiarClave() {
   const { usuario, cambiarClave, salir } = useAuth();
@@ -20,6 +21,10 @@ export default function CambiarClave() {
     setError("");
     if (nueva !== confirmacion) {
       setError("Las nuevas claves no coinciden");
+      return;
+    }
+    if (nueva !== nueva.trim()) {
+      setError("La clave no puede empezar ni terminar con espacios");
       return;
     }
     setGuardando(true);
@@ -48,12 +53,11 @@ export default function CambiarClave() {
           <h2>Cambiar clave</h2>
           <p className="hint">Usa al menos 10 caracteres y no compartas tu clave.</p>
           {error && <div className="error">{error}</div>}
-          <label>Clave temporal</label>
-          <input type="password" value={actual} onChange={(e) => setActual(e.target.value)} autoComplete="current-password" required />
-          <label>Nueva clave</label>
-          <input type="password" minLength={10} value={nueva} onChange={(e) => setNueva(e.target.value)} autoComplete="new-password" required />
-          <label>Confirmar nueva clave</label>
-          <input type="password" minLength={10} value={confirmacion} onChange={(e) => setConfirmacion(e.target.value)} autoComplete="new-password" required />
+          {/* Usuario oculto: así el gestor de contraseñas del navegador guarda la clave nueva en esta cuenta. */}
+          <input className="usuario-oculto" type="email" name="username" autoComplete="username" value={usuario.email} readOnly tabIndex={-1} aria-hidden="true" />
+          <CampoClave id="actual" label="Clave temporal" value={actual} onChange={setActual} autoComplete="current-password" autoFocus />
+          <CampoClave id="nueva" label="Nueva clave" value={nueva} onChange={setNueva} autoComplete="new-password" minLength={10} />
+          <CampoClave id="confirmacion" label="Confirmar nueva clave" value={confirmacion} onChange={setConfirmacion} autoComplete="new-password" minLength={10} />
           <button className="btn full" disabled={guardando}>{guardando ? "Guardando…" : "Guardar nueva clave"}</button>
           <button className="btn secondary full" type="button" onClick={salir}>Cancelar y salir</button>
         </form>

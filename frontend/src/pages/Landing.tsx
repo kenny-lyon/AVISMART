@@ -22,7 +22,7 @@ const FUNCIONES: { icono: IconName; titulo: string; texto: string }[] = [
   { icono: "alert", titulo: "Alertas oportunas", texto: "Detecta desviaciones en tus galpones y deja cada aviso disponible para su atención." },
   { icono: "health", titulo: "Sanidad validada", texto: "Ordena vacunas, tratamientos y periodos de carencia con intervención veterinaria." },
   { icono: "climate", titulo: "Clima del galpón", texto: "Relaciona temperatura y humedad con el comportamiento productivo del galpón." },
-  { icono: "users", titulo: "Trabajo por roles", texto: "Productor, operativo y veterinario ven lo que les corresponde." },
+  { icono: "users", titulo: "Trabajo por roles", texto: "Productor, operario y veterinario ven lo que les corresponde." },
   { icono: "report", titulo: "Cierre con reportes", texto: "Consolida resultados técnicos y económicos en documentos PDF y Excel." },
 ];
 
@@ -146,7 +146,7 @@ export default function Landing() {
         <section className="pf-section pf-roles">
           <div className="pf-container pf-roles-grid">
             <div><p className="pf-eyebrow"><span/>Un equipo, una campaña</p><h2>Cada persona ve lo que necesita para trabajar.</h2><p>AviSmart protege las funciones por rol y mantiene a todos dentro del mismo flujo de información.</p></div>
-            <div className="pf-role-list"><article><b>01</b><span><strong>Productor</strong><small>Supervisa los galpones y toma decisiones.</small></span></article><article><b>02</b><span><strong>Operativo</strong><small>Registra el trabajo diario del galpón.</small></span></article><article><b>03</b><span><strong>Médico veterinario</strong><small>Valida sanidad, tratamientos y alertas.</small></span></article></div>
+            <div className="pf-role-list"><article><b>01</b><span><strong>Productor</strong><small>Supervisa los galpones y toma decisiones.</small></span></article><article><b>02</b><span><strong>Operario</strong><small>Registra el trabajo diario del galpón.</small></span></article><article><b>03</b><span><strong>Médico veterinario</strong><small>Valida sanidad, tratamientos y alertas.</small></span></article></div>
           </div>
         </section>
 

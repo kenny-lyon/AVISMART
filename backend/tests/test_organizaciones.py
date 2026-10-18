@@ -166,9 +166,9 @@ class OrganizacionesTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/resumen", headers=self.entrar("productor@a.pe")).status_code, 200)
 
 
-    def test_productor_gestiona_solo_operativos_y_veterinarios(self):
+    def test_productor_gestiona_solo_operarios_y_veterinarios(self):
         prod = self.entrar("productor@a.pe")
-        alta = self.client.post("/api/usuarios", headers=prod, json={"nombre": "Pedro Operario", "email": "pedro@a.pe", "rol": "OPERATIVO"})
+        alta = self.client.post("/api/usuarios", headers=prod, json={"nombre": "Pedro Operario", "email": "pedro@a.pe", "rol": "OPERARIO"})
         self.assertEqual(alta.status_code, 200, alta.text)
         self.assertEqual(alta.json()["usuario"]["organizacion"]["id"], self.ids["a"]["org"])
         for rol in ("PRODUCTOR", "ADMIN", "PLATAFORMA"):

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { inicio } from "../api";
 import { useAuth } from "../auth";
+import CampoClave from "../components/CampoClave";
 
 export default function Login() {
   const { entrar } = useAuth();
@@ -47,8 +48,8 @@ export default function Login() {
           {error && <div className="error">{error}</div>}
           <label>Correo</label>
           <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" required />
-          <label>Clave</label>
-          <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" required />
+          <CampoClave id="clave" label="Clave" value={password} onChange={setPassword} autoComplete="current-password" />
+          <p className="olvide"><Link to="/olvide-clave">¿Olvidaste tu clave?</Link></p>
           <button className="btn full" disabled={cargando}>
             {cargando ? "Ingresando…" : "Iniciar sesión"}
           </button>

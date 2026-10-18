@@ -65,7 +65,7 @@ export default function Cuentas({ roles, gestiona = roles, base = "/usuarios", t
   const [nueva, setNueva] = useState(false);
   const [nombre, setNombre] = useState("");
   const [email, setEmail] = useState("");
-  const [rol, setRol] = useState<Rol>(roles.includes("OPERATIVO") ? "OPERATIVO" : roles[0]);
+  const [rol, setRol] = useState<Rol>(roles.includes("OPERARIO") ? "OPERARIO" : roles[0]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [credencial, setCredencial] = useState<{ titulo: string; datos: Credencial } | null>(null);

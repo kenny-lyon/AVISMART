@@ -66,7 +66,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       titulo: "Seguimiento",
       items: [
         { to: "/panel", label: "Panel del lote", icono: "panel" as const },
-        ...(puede("PRODUCTOR", "OPERATIVO") ? [{ to: "/registro", label: "Registro del día", icono: "registro" as const }] : []),
+        ...(puede("PRODUCTOR", "OPERARIO") ? [{ to: "/registro", label: "Registro del día", icono: "registro" as const }] : []),
         { to: "/alertas", label: "Alertas", icono: "alertas" as const, contador: abiertas, urgente: true },
         { to: "/camara", label: "Cámara", icono: "camara" as const },
       ],

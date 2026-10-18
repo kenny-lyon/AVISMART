@@ -2,25 +2,27 @@ import { useEffect, useState } from "react";
 import { api, type Rol } from "../api";
 import { useAuth } from "../auth";
 import Cuentas from "../components/Cuentas";
+import TelegramCliente from "../components/TelegramCliente";
 import { Campo, PageHeader, Panel, Tabs, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
 
 /** Qué cuentas crea y gestiona cada rol del cliente (lo mismo que valida el backend). */
 const PERSONAL: Partial<Record<Rol, { crea: Rol[]; gestiona: Rol[] }>> = {
-  ADMIN: { crea: ["PRODUCTOR", "OPERATIVO", "VETERINARIO"], gestiona: ["ADMIN", "PRODUCTOR", "OPERATIVO", "VETERINARIO"] },
-  PRODUCTOR: { crea: ["OPERATIVO", "VETERINARIO"], gestiona: ["OPERATIVO", "VETERINARIO"] },
+  ADMIN: { crea: ["PRODUCTOR", "OPERARIO", "VETERINARIO"], gestiona: ["ADMIN", "PRODUCTOR", "OPERARIO", "VETERINARIO"] },
+  PRODUCTOR: { crea: ["OPERARIO", "VETERINARIO"], gestiona: ["OPERARIO", "VETERINARIO"] },
 };
 
 export default function Configuracion() {
   const { usuario } = useAuth();
   const { resumen, recargar } = useLote();
   const avisar = useToast();
-  const rol = usuario?.rol ?? "OPERATIVO";
+  const rol = usuario?.rol ?? "OPERARIO";
   const personal = PERSONAL[rol];
   const veUmbral = rol === "VETERINARIO" || rol === "ADMIN";
   const pestanas = [
     ...(personal ? [{ id: "cuentas", label: "Personal" }] : []),
     ...(veUmbral ? [{ id: "parametros", label: "Parámetros de alerta" }] : []),
+    ...(personal ? [{ id: "notificaciones", label: "Notificaciones" }] : []),
   ];
   const [pestana, setPestana] = useState(pestanas[0]?.id ?? "parametros");
   const [umbral, setUmbral] = useState(String(resumen?.umbral_mortalidad ?? 20));
@@ -67,11 +69,13 @@ export default function Configuracion() {
           titulo="Personal autorizado"
           descripcion={
             rol === "PRODUCTOR"
-              ? "Agrega a tus operativos y médicos veterinarios. Cada alta genera una clave temporal."
+              ? "Agrega a tus operarios y médicos veterinarios. Cada alta genera una clave temporal."
               : "Cada alta genera una clave temporal que la persona cambia al entrar."
           }
         />
       )}
+
+      {pestana === "notificaciones" && personal && <TelegramCliente />}
 
       {pestana === "parametros" && veUmbral && (
         <Panel titulo="Umbral de mortalidad diaria" descripcion="Lo define el médico veterinario según el estado sanitario del lote.">

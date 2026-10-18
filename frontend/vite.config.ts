@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://127.0.0.1:8000",
+      // xfwd envía la IP real del visitante al backend (límites por IP del formulario de contacto).
+      "/api": { target: "http://127.0.0.1:8000", xfwd: true },
     },
   },
 });

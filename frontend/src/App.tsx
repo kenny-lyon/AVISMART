@@ -7,11 +7,14 @@ import { LoteProvider } from "./lote";
 import Alertas from "./pages/Alertas";
 import Camara from "./pages/Camara";
 import CambiarClave from "./pages/CambiarClave";
+import Confirmar from "./pages/Confirmar";
 import Contacto from "./pages/Contacto";
 import Configuracion from "./pages/Configuracion";
 import Instalaciones from "./pages/Instalaciones";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import OlvideClave from "./pages/OlvideClave";
+import RestablecerClave from "./pages/RestablecerClave";
 import Lotes from "./pages/Lotes";
 import Panel from "./pages/Panel";
 import ClienteDetalle from "./pages/plataforma/ClienteDetalle";
@@ -62,6 +65,9 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/contacto" element={<Contacto />} />
+      <Route path="/confirmar" element={<Confirmar />} />
+      <Route path="/olvide-clave" element={<OlvideClave />} />
+      <Route path="/restablecer-clave" element={<RestablecerClave />} />
       <Route path="/servicios" element={<Servicios />} />
       <Route path="/login" element={listo && usuario ? <Navigate to={usuario.debe_cambiar_clave ? "/cambiar-clave" : inicio(usuario)} replace /> : <Login />} />
       <Route path="/cambiar-clave" element={<CambiarClave />} />

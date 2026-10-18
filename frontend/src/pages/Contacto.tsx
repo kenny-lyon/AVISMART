@@ -1,26 +1,82 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import "./landing.css";
 
+type Turnstile = {
+  render: (el: HTMLElement, opciones: Record<string, unknown>) => string;
+  reset: (id?: string) => void;
+};
+type Envio = { mensaje: string; horas_para_confirmar: number; enlace_desarrollo?: string };
+
+/** Carga el widget antibots de Cloudflare solo si el servidor tiene la clave configurada. */
+function useTurnstile(contenedor: React.RefObject<HTMLDivElement | null>, activo: boolean) {
+  const [sitekey, setSitekey] = useState<string | null>(null);
+  const widget = useRef<string | null>(null);
+
+  useEffect(() => {
+    api<{ turnstile_sitekey: string | null }>("/contacto/config")
+      .then((c) => setSitekey(c.turnstile_sitekey))
+      .catch(() => setSitekey(null));
+  }, []);
+
+  useEffect(() => {
+    if (!sitekey || !activo) return;
+    const pintar = () => {
+      const ts = (window as unknown as { turnstile?: Turnstile }).turnstile;
+      if (ts && contenedor.current && !widget.current) {
+        widget.current = ts.render(contenedor.current, { sitekey, language: "es", theme: "light" });
+      }
+    };
+    if (!document.getElementById("cf-turnstile")) {
+      const script = document.createElement("script");
+      script.id = "cf-turnstile";
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.onload = pintar;
+      document.head.appendChild(script);
+    } else {
+      pintar();
+    }
+    return () => {
+      widget.current = null;
+    };
+  }, [sitekey, activo, contenedor]);
+
+  function reiniciar() {
+    (window as unknown as { turnstile?: Turnstile }).turnstile?.reset(widget.current ?? undefined);
+  }
+
+  return { requerido: !!sitekey, reiniciar };
+}
+
 export default function Contacto() {
   const [menu, setMenu] = useState(false);
   const [enviando, setEnviando] = useState(false);
-  const [enviado, setEnviado] = useState(false);
+  const [enviado, setEnviado] = useState<(Envio & { correo: string }) | null>(null);
   const [error, setError] = useState("");
+  const cajaTurnstile = useRef<HTMLDivElement>(null);
+  const turnstile = useTurnstile(cajaTurnstile, !enviado);
 
   async function enviar(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setEnviando(true);
     setError("");
     const formulario = e.currentTarget;
-    const datos = new FormData(formulario);
+    const datos = Object.fromEntries(new FormData(formulario).entries()) as Record<string, string>;
+    const token = datos["cf-turnstile-response"] ?? "";
+    delete datos["cf-turnstile-response"];
+    if (turnstile.requerido && !token) {
+      setError("Espera a que termine la verificación antibots antes de enviar.");
+      return;
+    }
+    setEnviando(true);
     try {
-      await api("/contacto", { method: "POST", body: JSON.stringify(Object.fromEntries(datos.entries())) });
+      const respuesta = await api<Envio>("/contacto", { method: "POST", body: JSON.stringify({ ...datos, turnstile_token: token }) });
+      setEnviado({ ...respuesta, correo: datos.email });
       formulario.reset();
-      setEnviado(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo enviar la solicitud");
+      turnstile.reiniciar();
     } finally {
       setEnviando(false);
     }
@@ -59,9 +115,19 @@ export default function Contacto() {
         <section className="contact-card" id="formulario">
           {enviado ? (
             <div className="contact-success">
-              <span>✓</span><h2>Solicitud recibida</h2>
-              <p>El equipo de AviSmart revisará tus datos y se pondrá en contacto contigo.</p>
-              <button className="pf-button yellow" onClick={() => setEnviado(false)}>Enviar otra solicitud</button>
+              <span>✉</span><h2>Revisa tu correo</h2>
+              <p>
+                Enviamos un enlace de confirmación a <b>{enviado.correo}</b>. Ábrelo en las próximas{" "}
+                {enviado.horas_para_confirmar} horas para que tu solicitud llegue a nuestro equipo.
+              </p>
+              <p className="contact-nota">¿No lo ves? Revisa la carpeta de spam o promociones.</p>
+              {enviado.enlace_desarrollo && (
+                <div className="contact-dev">
+                  <b>Modo desarrollo:</b> el envío de correos aún no está configurado.
+                  <a href={enviado.enlace_desarrollo}>Abrir enlace de confirmación</a>
+                </div>
+              )}
+              <button className="pf-button yellow" onClick={() => setEnviado(null)}>Enviar otra solicitud</button>
             </div>
           ) : (
             <form className="contact-form" onSubmit={enviar}>
@@ -81,10 +147,13 @@ export default function Contacto() {
                 <label>Plan de interés
                   <select name="plan" defaultValue="POR_DEFINIR"><option value="POR_DEFINIR">Aún no lo sé</option><option value="BASICO">Básico</option></select>
                 </label>
-                <label className="wide">Mensaje *<textarea name="mensaje" rows={5} minLength={10} required placeholder="Cuéntanos cómo manejas actualmente tu producción…" /></label>
+                <label className="wide">Mensaje *<textarea name="mensaje" rows={5} minLength={10} maxLength={1500} required placeholder="Cuéntanos cómo manejas actualmente tu producción…" /></label>
+                {/* Campo trampa: invisible para las personas; los bots suelen llenarlo. */}
+                <label className="campo-trampa" aria-hidden="true">Sitio web<input name="sitio_web" tabIndex={-1} autoComplete="off" /></label>
               </div>
+              {turnstile.requerido && <div className="contact-turnstile" ref={cajaTurnstile} />}
               <button className="pf-button yellow large" disabled={enviando}>{enviando ? "Enviando…" : "Enviar solicitud"}</button>
-              <small>Usaremos estos datos únicamente para responder y dar seguimiento a tu solicitud.</small>
+              <small>Te enviaremos un correo para confirmar tu dirección. Usaremos estos datos únicamente para responder tu solicitud.</small>
             </form>
           )}
         </section>

@@ -16,6 +16,12 @@ class Organizacion(Base):
     estado: Mapped[str] = mapped_column(String(20), default="ACTIVA")
     creada_en: Mapped[datetime] = mapped_column(DateTime)
     solicitud_id: Mapped[int | None] = mapped_column(ForeignKey("solicitudes_contacto.id"), nullable=True)
+    # Chat de Telegram propio del cliente (sus alertas solo van ahí).
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    telegram_chat_nombre: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    telegram_vinculado_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    telegram_codigo: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    telegram_codigo_expira: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     usuarios: Mapped[list["Usuario"]] = relationship(back_populates="organizacion")
     granjas: Mapped[list["Granja"]] = relationship(back_populates="organizacion")
@@ -31,11 +37,38 @@ class Usuario(Base):
     rol: Mapped[str] = mapped_column(String(20))
     activo: Mapped[int] = mapped_column(Integer, default=1)
     debe_cambiar_clave: Mapped[int] = mapped_column(Integer, default=0)
+    # Sube cada vez que cambia la clave: invalida todas las sesiones abiertas.
+    version_sesion: Mapped[int] = mapped_column(Integer, default=0)
+    # Recuperación "¿Olvidaste tu clave?": se guarda solo el hash del enlace.
+    reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    reset_expira: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Vacío solo para las cuentas PLATAFORMA (propietario de AviSmart).
     organizacion_id: Mapped[int | None] = mapped_column(ForeignKey("organizaciones.id"), nullable=True, index=True)
 
     organizacion: Mapped[Organizacion | None] = relationship(back_populates="usuarios")
     registros: Mapped[list["RegistroDiario"]] = relationship(back_populates="usuario")
+
+
+class IntentoLogin(Base):
+    """Intentos fallidos de ingreso, para bloquear temporalmente la adivinación de claves."""
+
+    __tablename__ = "intentos_login"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(160), index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class IntentoRecuperacion(Base):
+    """Registro de pedidos de "¿Olvidaste tu clave?" para limitar abusos."""
+
+    __tablename__ = "intentos_recuperacion"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(160), index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    creado_en: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
 class SolicitudContacto(Base):
@@ -50,9 +83,16 @@ class SolicitudContacto(Base):
     motivo: Mapped[str] = mapped_column(String(40))
     plan: Mapped[str] = mapped_column(String(40), default="POR_DEFINIR")
     mensaje: Mapped[str] = mapped_column(Text)
+    # PENDIENTE (sin confirmar el correo) · NUEVA (verificada) · CONTACTADA · CLIENTE · DESCARTADA · SOSPECHOSA
     estado: Mapped[str] = mapped_column(String(20), default="NUEVA")
     creada_en: Mapped[datetime] = mapped_column(DateTime)
     atendida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    token_expira: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    confirmacion_enviada: Mapped[int] = mapped_column(Integer, default=0)
+    verificada_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    motivo_sospecha: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
 
 class Granja(Base):
@@ -156,8 +196,15 @@ class Vacunacion(Base):
     lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"))
     nombre: Mapped[str] = mapped_column(String(120))
     fecha_programada: Mapped[date] = mapped_column(Date)
+    # PENDIENTE (fecha propuesta) -> PROGRAMADA (fecha aprobada por el veterinario)
+    # -> APLICADA (registrada por el personal) -> VALIDADA (conformidad del veterinario).
+    # OBSERVADA: el veterinario no dio conformidad en alguna de las dos revisiones.
     estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE")
     observacion: Mapped[str] = mapped_column(Text, default="")
+    aprobada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    fecha_aplicacion: Mapped[date | None] = mapped_column(Date, nullable=True)
+    aplicada_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    nota_aplicacion: Mapped[str] = mapped_column(Text, default="")
     validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     lote: Mapped[Lote] = relationship(back_populates="vacunas")
 
@@ -203,6 +250,8 @@ class Alerta(Base):
     requiere_veterinario: Mapped[int] = mapped_column(Integer, default=0)
     observacion: Mapped[str] = mapped_column(Text, default="")
     creada_en: Mapped[datetime] = mapped_column(DateTime)
+    # Recordatorios de vacuna: a qué vacuna pertenecen (antes se buscaban por el nombre).
+    vacuna_id: Mapped[int | None] = mapped_column(ForeignKey("vacunaciones.id"), nullable=True, index=True)
     atendida_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     notificacion_estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE")
     notificacion_error: Mapped[str] = mapped_column(Text, default="")

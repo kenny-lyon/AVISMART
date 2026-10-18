@@ -96,7 +96,7 @@ def _existe_alerta(db: Session, lote_id: int, tipo: str, hoy: date, motivo: str 
     return encontrada is not None
 
 
-def _crear(db: Session, lote_id: int, tipo: str, mensaje: str, veterinario: bool) -> Alerta:
+def _crear(db: Session, lote_id: int, tipo: str, mensaje: str, veterinario: bool, vacuna_id: int | None = None) -> Alerta:
     alerta = Alerta(
         lote_id=lote_id,
         tipo=tipo,
@@ -105,6 +105,7 @@ def _crear(db: Session, lote_id: int, tipo: str, mensaje: str, veterinario: bool
         requiere_veterinario=1 if veterinario else 0,
         observacion="",
         creada_en=datetime.now(),
+        vacuna_id=vacuna_id,
     )
     db.add(alerta)
     return alerta
@@ -304,78 +305,96 @@ def fechas_tratamiento(inicio: date, dias_tratamiento: int, dias_carencia: int) 
     return ultima, libre
 
 
-def _existe_recordatorio_abierto(db: Session, lote_id: int, vacuna_nombre: str) -> bool:
-    filas = (
-        db.query(Alerta)
-        .filter(
-            Alerta.lote_id == lote_id,
-            Alerta.tipo == "RECORDATORIO",
-            Alerta.estado != "ATENDIDA",
-        )
-        .all()
-    )
-    clave = vacuna_nombre.lower()
-    return any(clave in a.mensaje.lower() for a in filas)
+# Etapas de una vacuna que todavía esperan una acción y quién la debe hacer.
+ESPERA_VETERINARIO = "PENDIENTE"  # falta aprobar la fecha
+ESPERA_APLICACION = "PROGRAMADA"  # falta aplicarla en el galpón
+
+
+def _cuando(dias: int) -> str:
+    return "hoy" if dias == 0 else f"hace {dias} día{'s' if dias != 1 else ''}"
 
 
 def evaluar_vacunas_vencidas(
     db: Session, lote: Lote | None = None, organizacion_id: int | None = None
 ) -> list[Alerta]:
-    """Crea un recordatorio si la vacuna llegó a su fecha y sigue pendiente."""
+    """Crea un recordatorio por vacuna y por etapa cuando la fecha llegó y nadie actuó.
+
+    Solo lotes activos. Si alguien atendió el recordatorio a mano, no se vuelve a crear
+    para esa misma etapa; si la vacuna avanza de etapa y sigue atrasada, se crea el siguiente.
+    """
     hoy = date.today()
-    consulta = db.query(Vacunacion).filter(
-        Vacunacion.estado == "PENDIENTE",
-        Vacunacion.fecha_programada <= hoy,
+    consulta = (
+        db.query(Vacunacion)
+        .join(Lote, Vacunacion.lote_id == Lote.id)
+        .filter(
+            Lote.estado == "ACTIVO",
+            Vacunacion.estado.in_((ESPERA_VETERINARIO, ESPERA_APLICACION)),
+            Vacunacion.fecha_programada <= hoy,
+        )
     )
     if lote is not None:
         consulta = consulta.filter(Vacunacion.lote_id == lote.id)
     if organizacion_id is not None:
         consulta = (
-            consulta.join(Lote, Vacunacion.lote_id == Lote.id)
-            .join(Galpon, Lote.galpon_id == Galpon.id)
+            consulta.join(Galpon, Lote.galpon_id == Galpon.id)
             .join(Granja, Galpon.granja_id == Granja.id)
             .filter(Granja.organizacion_id == organizacion_id)
         )
     nuevas: list[Alerta] = []
     for vacuna in consulta.all():
-        if _existe_recordatorio_abierto(db, vacuna.lote_id, vacuna.nombre):
-            continue
-        dias = (hoy - vacuna.fecha_programada).days
-        cuando = "hoy" if dias == 0 else f"hace {dias} día{'s' if dias != 1 else ''}"
-        nuevas.append(
-            _crear(
-                db,
-                vacuna.lote_id,
-                "RECORDATORIO",
-                f"La vacuna {vacuna.nombre} debía aplicarse {cuando} ({vacuna.fecha_programada.isoformat()}) y sigue pendiente.",
-                True,
+        veterinario = vacuna.estado == ESPERA_VETERINARIO
+        ya_existe = (
+            db.query(Alerta)
+            .filter(
+                Alerta.tipo == "RECORDATORIO",
+                Alerta.vacuna_id == vacuna.id,
+                Alerta.requiere_veterinario == (1 if veterinario else 0),
             )
+            .first()
         )
+        if ya_existe:
+            continue
+        cuando = _cuando((hoy - vacuna.fecha_programada).days)
+        fecha = vacuna.fecha_programada.strftime("%d/%m/%Y")
+        if veterinario:
+            mensaje = f"La vacuna {vacuna.nombre} estaba prevista para {cuando} ({fecha}) y su fecha aún no fue aprobada por el veterinario."
+        else:
+            mensaje = f"La vacuna {vacuna.nombre} debía aplicarse {cuando} ({fecha}) y no tiene registro de aplicación."
+        nuevas.append(_crear(db, vacuna.lote_id, "RECORDATORIO", mensaje, veterinario, vacuna.id))
     return nuevas
 
 
-def cerrar_recordatorios_vacuna(db: Session, lote_id: int, vacuna_nombre: str) -> None:
-    filas = (
+def cerrar_recordatorios_vacuna(db: Session, vacuna: Vacunacion, motivo: str) -> None:
+    """Cierra solo los recordatorios de esta vacuna (no los de otra con nombre parecido)."""
+    for alerta in (
         db.query(Alerta)
-        .filter(
-            Alerta.lote_id == lote_id,
-            Alerta.tipo == "RECORDATORIO",
-            Alerta.estado != "ATENDIDA",
-        )
+        .filter(Alerta.tipo == "RECORDATORIO", Alerta.vacuna_id == vacuna.id, Alerta.estado != "ATENDIDA")
         .all()
-    )
-    clave = vacuna_nombre.lower()
-    for alerta in filas:
-        if clave in alerta.mensaje.lower():
-            alerta.estado = "ATENDIDA"
-            alerta.observacion = "Cerrada al validar la vacuna."
+    ):
+        alerta.estado = "ATENDIDA"
+        alerta.observacion = motivo
 
 
-def carencias_activas(db: Session, lote_id: int) -> list[dict]:
-    hoy = date.today()
+def cerrar_recordatorios_lote(db: Session, lote_id: int) -> None:
+    for alerta in (
+        db.query(Alerta)
+        .filter(Alerta.tipo == "RECORDATORIO", Alerta.lote_id == lote_id, Alerta.estado != "ATENDIDA")
+        .all()
+    ):
+        alerta.estado = "ATENDIDA"
+        alerta.observacion = "Cerrado automáticamente al cerrar el lote."
+
+
+def carencias_activas(db: Session, lote_id: int, referencia: date | None = None) -> list[dict]:
+    """Tratamientos cuya carencia sigue vigente en la fecha de referencia (por defecto hoy).
+
+    Para cerrar el lote, la referencia es la fecha de faena. Los tratamientos observados por el
+    veterinario también cuentan: el medicamento ya se aplicó y deja residuos igual.
+    """
+    dia = referencia or date.today()
     filas = (
         db.query(Tratamiento)
-        .filter(Tratamiento.lote_id == lote_id, Tratamiento.estado != "OBSERVADA")
+        .filter(Tratamiento.lote_id == lote_id)
         .order_by(Tratamiento.fecha_inicio.desc())
         .all()
     )
@@ -386,13 +405,13 @@ def carencias_activas(db: Session, lote_id: int) -> list[dict]:
             tratamiento.dias_tratamiento,
             tratamiento.dias_carencia,
         )
-        if hoy < libre:
+        if dia < libre:
             activas.append(
                 {
                     "id": tratamiento.id,
                     "medicamento": tratamiento.medicamento,
                     "libre_faena": libre.isoformat(),
-                    "dias_restantes": (libre - hoy).days,
+                    "dias_restantes": (libre - dia).days,
                     "estado": tratamiento.estado,
                 }
             )

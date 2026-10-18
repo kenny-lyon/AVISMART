@@ -94,20 +94,20 @@ export default function Registro() {
                 </Seccion>
                 <Seccion titulo="2. Bajas">
                   <Campo label="Aves muertas" ayuda={`Alerta si supera ${panel.umbral_mortalidad} aves.`}>
-                    <input type="number" min="0" inputMode="numeric" value={datos.mortalidad} onChange={set("mortalidad")} placeholder={anterior ? `Anterior: ${anterior.mortalidad}` : "0"} required />
+                    <input type="number" min="0" max={panel.aves_vivas} inputMode="numeric" value={datos.mortalidad} onChange={set("mortalidad")} placeholder={anterior ? `Anterior: ${anterior.mortalidad}` : "0"} required />
                   </Campo>
                 </Seccion>
                 <Seccion titulo="3. Consumo">
                   <Campo label="Alimento (kg)">
-                    <input type="number" min="0" step="0.1" inputMode="decimal" value={datos.alimento} onChange={set("alimento")} placeholder={anterior ? `Anterior: ${num(anterior.alimento_kg, 1)}` : ""} required />
+                    <input type="number" min="0" max={Math.floor(panel.aves_vivas * 0.35 + 1)} step="0.1" inputMode="decimal" value={datos.alimento} onChange={set("alimento")} placeholder={anterior ? `Anterior: ${num(anterior.alimento_kg, 1)}` : ""} required />
                   </Campo>
                   <Campo label="Agua (L)">
-                    <input type="number" min="0" step="0.1" inputMode="decimal" value={datos.agua} onChange={set("agua")} placeholder={anterior ? `Anterior: ${num(anterior.agua_l, 1)}` : ""} required />
+                    <input type="number" min="0" max={Math.floor(panel.aves_vivas * 0.8 + 1)} step="0.1" inputMode="decimal" value={datos.agua} onChange={set("agua")} placeholder={anterior ? `Anterior: ${num(anterior.agua_l, 1)}` : ""} required />
                   </Campo>
                 </Seccion>
                 <Seccion titulo="4. Pesaje">
                   <Campo label="Peso promedio por ave (g)" ayuda={`Pesa un grupo de pollos (por ejemplo 50), suma los gramos y divide entre la cantidad. Para hoy la curva ${panel.lote.linea} espera cerca de ${num(panel.peso_esperado_g)} g.`}>
-                    <input type="number" min="1" step="1" inputMode="numeric" value={datos.peso} onChange={set("peso")} placeholder={`≈ ${Math.round(panel.peso_esperado_g)}`} required />
+                    <input type="number" min="25" max="6000" step="1" inputMode="numeric" value={datos.peso} onChange={set("peso")} placeholder={`≈ ${Math.round(panel.peso_esperado_g)}`} required />
                   </Campo>
                 </Seccion>
               </div>

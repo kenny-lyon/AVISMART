@@ -45,7 +45,7 @@ export default function ClienteDetalle() {
       <PageHeader
         eyebrow="Cliente"
         titulo={cliente.nombre}
-        descripcion={<>Cliente desde {cliente.creada_en ? fecha(cliente.creada_en) : "—"} · <Estado valor={cliente.estado} /></>}
+        descripcion={<>Cliente desde {cliente.creada_en ? fecha(cliente.creada_en) : "—"} · <Estado valor={cliente.estado} /> · Telegram {cliente.telegram_vinculado ? "vinculado" : "sin vincular"}</>}
         acciones={
           <button className={cliente.estado === "ACTIVA" ? "btn danger" : "btn"} type="button" onClick={cambiarEstado}>
             <Icon name="pausa" size={16} /> {cliente.estado === "ACTIVA" ? "Suspender cliente" : "Reactivar cliente"}
@@ -55,7 +55,7 @@ export default function ClienteDetalle() {
 
       <div className="kpis">
         <article className="kpi"><span className="kpi-icono"><Icon name="cuentas" /></span><div><span>Productores</span><strong>{cliente.personal.PRODUCTOR}</strong></div></article>
-        <article className="kpi"><span className="kpi-icono"><Icon name="registro" /></span><div><span>Operativos</span><strong>{cliente.personal.OPERATIVO}</strong></div></article>
+        <article className="kpi"><span className="kpi-icono"><Icon name="registro" /></span><div><span>Operarios</span><strong>{cliente.personal.OPERARIO}</strong></div></article>
         <article className="kpi"><span className="kpi-icono"><Icon name="sanidad" /></span><div><span>Veterinarios</span><strong>{cliente.personal.VETERINARIO}</strong></div></article>
         <article className="kpi acento"><span className="kpi-icono"><Icon name="granjas" /></span><div><span>Granjas · lotes activos</span><strong>{cliente.granjas} · {cliente.lotes_activos}</strong></div></article>
       </div>
@@ -66,7 +66,7 @@ export default function ClienteDetalle() {
         gestiona={ROLES_CLIENTE}
         onCambio={() => cargar().catch(() => undefined)}
         titulo="Personal del cliente"
-        descripcion="Productor, operativos y médicos veterinarios. Cada alta genera una clave temporal; el productor también puede agregar a su personal."
+        descripcion="Productor, operarios y médicos veterinarios. Cada alta genera una clave temporal; el productor también puede agregar a su personal."
       />
     </>
   );

@@ -37,10 +37,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function cambiarClave(actual: string, nueva: string) {
-    const actualizado = await api<Usuario>("/auth/cambiar-clave", {
+    const { token, ...actualizado } = await api<Usuario & { token: string }>("/auth/cambiar-clave", {
       method: "POST",
       body: JSON.stringify({ clave_actual: actual, clave_nueva: nueva }),
     });
+    // Cambiar la clave cierra las demás sesiones; esta sigue con el token nuevo.
+    guardarSesion(token);
     setUsuario(actualizado);
   }
 

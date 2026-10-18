@@ -118,7 +118,7 @@ export default function Clientes() {
                       <strong>{c.responsables[0]?.nombre ?? "—"}</strong>
                       <small>{c.responsables[0]?.email}</small>
                     </td>
-                    <td>{c.personal.OPERATIVO} op. · {c.personal.VETERINARIO} vet.</td>
+                    <td>{c.personal.OPERARIO} op. · {c.personal.VETERINARIO} vet.</td>
                     <td className="num">{c.granjas}</td>
                     <td className="num">{c.lotes_activos}</td>
                     <td><Estado valor={c.estado} /></td>
@@ -150,7 +150,7 @@ export default function Clientes() {
           <Campo label="Nombre completo" ancho>
             <input value={form.productorNombre} onChange={(e) => setForm({ ...form, productorNombre: e.target.value })} required minLength={3} />
           </Campo>
-          <Campo label="Correo" ancho ayuda="Con este correo entrará al sistema. Después podrás agregar a sus operativos y veterinarios.">
+          <Campo label="Correo" ancho ayuda="Con este correo entrará al sistema. Después podrás agregar a sus operarios y veterinarios.">
             <input type="email" value={form.productorEmail} onChange={(e) => setForm({ ...form, productorEmail: e.target.value })} required />
           </Campo>
         </Seccion>

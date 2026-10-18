@@ -50,8 +50,8 @@ export default function PanelPage() {
   if (!panel) return <p className="muted">{error || "Cargando el lote…"}</p>;
   const rol = usuario?.rol ?? "";
   const activo = panel.lote.estado === "ACTIVO";
-  const puedeClima = activo && ["PRODUCTOR", "OPERATIVO", "ADMIN"].includes(rol);
-  const puedeRegistrar = activo && ["PRODUCTOR", "OPERATIVO"].includes(rol);
+  const puedeClima = activo && ["PRODUCTOR", "OPERARIO", "ADMIN"].includes(rol);
+  const puedeRegistrar = activo && ["PRODUCTOR", "OPERARIO"].includes(rol);
   // El último pesaje se compara con la curva del día en que se pesó, no con la de hoy.
   const pesaje = [...panel.serie].reverse().find((p) => p.peso != null) ?? null;
   const diferencia = pesaje?.peso ? (pesaje.peso / pesaje.esperado - 1) * 100 : 0;
@@ -203,7 +203,10 @@ export default function PanelPage() {
                 {panel.vacunas_vencidas.map((v) => (
                   <div className="aviso riesgo" key={`v${v.id}`}>
                     <Icon name="aviso" />
-                    <span><b>{v.nombre}</b> vencida desde el {fecha(v.fecha_programada)}{v.dias_atraso > 0 ? ` (${v.dias_atraso} d)` : ""}.</span>
+                    <span>
+                      <b>{v.nombre}</b> {v.estado === "PENDIENTE" ? "prevista" : "debía aplicarse"} el {fecha(v.fecha_programada)}
+                      {v.dias_atraso > 0 ? ` (${v.dias_atraso} d)` : ""}: {v.estado === "PENDIENTE" ? "falta que el veterinario apruebe la fecha." : "no tiene registro de aplicación."}
+                    </span>
                   </div>
                 ))}
                 <Link to="/sanidad">Ir a vacunas y tratamientos</Link>
@@ -239,7 +242,7 @@ export default function PanelPage() {
         sinPadding
       >
         {panel.registros.length === 0 ? (
-          <Vacio icono="registro" titulo="Aún no hay registros diarios" texto="El operativo o el productor anota bajas, consumo y peso cada día." />
+          <Vacio icono="registro" titulo="Aún no hay registros diarios" texto="El operario o el productor anota bajas, consumo y peso cada día." />
         ) : (
           <div className="tabla-wrap">
             <table>

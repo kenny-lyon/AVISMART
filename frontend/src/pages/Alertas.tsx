@@ -57,7 +57,7 @@ export default function Alertas() {
     <>
       <PageHeader
         titulo="Alertas"
-        descripcion="Salud y recordatorios de vacuna los cierra el veterinario. Ambiente y crecimiento, el productor."
+        descripcion="Salud y fechas de vacuna por aprobar las atiende el veterinario. Ambiente, crecimiento y vacunas por aplicar, el productor."
       />
       {mias > 0 && <div className="aviso info">Tienes {mias} alerta(s) abiertas que te corresponde atender.</div>}
 

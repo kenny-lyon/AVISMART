@@ -19,7 +19,7 @@ const RECEPCION_VACIA = {
   edadSaca: "42",
   observaciones: "",
 };
-const CIERRE_VACIO = { aves: "", peso: "", precio: "", pollitos: "", alimento: "", sanidad: "", otros: "0", observaciones: "" };
+const CIERRE_VACIO = { fecha: "", aves: "", peso: "", precio: "", pollitos: "", alimento: "", sanidad: "", otros: "0", observaciones: "" };
 
 export default function Lotes() {
   const { usuario } = useAuth();
@@ -101,7 +101,7 @@ export default function Lotes() {
 
   async function prepararCierre(lote: Lote) {
     setError("");
-    setCierre(CIERRE_VACIO);
+    setCierre({ ...CIERRE_VACIO, fecha: hoy() });
     setVivas(null);
     setCerrando(lote);
     try {
@@ -121,7 +121,7 @@ export default function Lotes() {
       const resultado = await api<CierreLote>(`/lotes/${cerrando.id}/cerrar`, {
         method: "POST",
         body: JSON.stringify({
-          fecha_cierre: hoy(),
+          fecha_cierre: cierre.fecha,
           aves_vendidas: Number(cierre.aves),
           peso_total_kg: Number(cierre.peso),
           precio_venta_kg: Number(cierre.precio),
@@ -151,6 +151,7 @@ export default function Lotes() {
   }
 
   const ingreso = Number(cierre.peso || 0) * Number(cierre.precio || 0);
+  const pesoPromedio = Number(cierre.aves) > 0 ? (Number(cierre.peso || 0) * 1000) / Number(cierre.aves) : 0;
   const costos = ["pollitos", "alimento", "sanidad", "otros"].reduce((t, k) => t + Number(cierre[k as keyof typeof cierre] || 0), 0);
   const margen = ingreso - costos;
   const campoCierre = (k: keyof typeof cierre) => ({
@@ -337,6 +338,9 @@ export default function Lotes() {
         peligro
       >
         <Seccion titulo="Venta">
+          <Campo label="Fecha de faena" ayuda="Día en que salieron las aves. Se usa para revisar la carencia de los tratamientos.">
+            <input type="date" min={cerrando?.fecha_ingreso} max={hoy()} {...campoCierre("fecha")} required />
+          </Campo>
           <Campo label="Aves vendidas" ayuda={vivas !== null ? `Aves vivas registradas: ${num(vivas)}.` : "Calculando aves vivas…"}>
             <input type="number" min="1" max={vivas ?? undefined} {...campoCierre("aves")} required />
           </Campo>
@@ -357,6 +361,7 @@ export default function Lotes() {
           <div className="resumen-calculo campo ancho">
             <div><span>Ingreso</span><strong>S/ {num(ingreso, 2)}</strong></div>
             <div><span>Costos</span><strong>S/ {num(costos, 2)}</strong></div>
+            <div><span>Peso promedio por ave</span><strong>{pesoPromedio ? `${num(pesoPromedio)} g` : "—"}</strong></div>
             <div className={margen >= 0 ? "positivo" : "negativo"}><span>Margen</span><strong>S/ {num(margen, 2)}</strong></div>
           </div>
           <Campo label="Observaciones" ancho>

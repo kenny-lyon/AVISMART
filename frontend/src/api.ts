@@ -1,7 +1,7 @@
-export type Rol = "PLATAFORMA" | "ADMIN" | "PRODUCTOR" | "OPERATIVO" | "VETERINARIO";
+export type Rol = "PLATAFORMA" | "ADMIN" | "PRODUCTOR" | "OPERARIO" | "VETERINARIO";
 
-export const ROLES_CLIENTE: Rol[] = ["ADMIN", "PRODUCTOR", "OPERATIVO", "VETERINARIO"];
-export const ROLES_PERSONAL: Rol[] = ["PRODUCTOR", "OPERATIVO", "VETERINARIO"];
+export const ROLES_CLIENTE: Rol[] = ["ADMIN", "PRODUCTOR", "OPERARIO", "VETERINARIO"];
+export const ROLES_PERSONAL: Rol[] = ["PRODUCTOR", "OPERARIO", "VETERINARIO"];
 
 /** Avisa a la barra lateral que vuelva a contar alertas o solicitudes. */
 export function avisarCambios() {
@@ -32,7 +32,8 @@ export type Organizacion = {
   granjas: number;
   lotes_activos: number;
   responsables: Usuario[];
-  personal: Record<"PRODUCTOR" | "OPERATIVO" | "VETERINARIO", number>;
+  personal: Record<"PRODUCTOR" | "OPERARIO" | "VETERINARIO", number>;
+  telegram_vinculado: boolean;
 };
 
 export type Lote = {
@@ -118,9 +119,11 @@ export type SolicitudContacto = {
   motivo: "DEMO" | "COMERCIAL" | "SOPORTE" | "ALIANZA";
   plan: string;
   mensaje: string;
-  estado: "NUEVA" | "CONTACTADA" | "DESCARTADA" | "CLIENTE";
+  estado: "NUEVA" | "CONTACTADA" | "DESCARTADA" | "CLIENTE" | "SOSPECHOSA";
   creada_en: string;
   atendida_en: string | null;
+  verificada_en: string | null;
+  motivo_sospecha: string | null;
 };
 
 export type Panel = {
@@ -166,6 +169,7 @@ export type Panel = {
     nombre: string;
     fecha_programada: string;
     dias_atraso: number;
+    estado: string;
   }[];
 };
 
@@ -207,6 +211,8 @@ export type Vacuna = {
   fecha_programada: string;
   estado: string;
   observacion: string;
+  fecha_aplicacion: string | null;
+  nota_aplicacion: string;
 };
 
 const TOKEN = "avismart_token";
@@ -238,7 +244,12 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   const token = leerToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`/api${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`/api${path}`, { ...options, headers });
+  } catch {
+    throw new ApiError(0, "No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.");
+  }
   if (res.status === 401 && !path.startsWith("/auth/")) {
     cerrarSesionLocal();
     if (!window.location.pathname.startsWith("/login")) {
@@ -246,13 +257,26 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     }
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Respuesta que no es JSON (por ejemplo, un error del servidor o del proxy).
+    data = null;
+  }
   if (!res.ok) {
-    const detail = data?.detail;
-    const message = typeof detail === "string" ? detail : "No se pudo completar la acción";
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, mensajeDeError(res.status, (data as { detail?: unknown } | null)?.detail));
   }
   return data as T;
+}
+
+/** Convierte cualquier respuesta de error en un mensaje claro para la persona. */
+function mensajeDeError(status: number, detail: unknown) {
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length) return "Revisa los datos del formulario: hay un valor fuera de rango o incompleto.";
+  if (status === 429) return "Hiciste varios intentos seguidos. Espera unos minutos e intenta de nuevo.";
+  if (status >= 500) return "Ocurrió un error inesperado en el servidor. Intenta de nuevo; si continúa, avisa al soporte.";
+  return "No se pudo completar la acción.";
 }
 
 export async function descargar(path: string, nombre: string) {
@@ -278,7 +302,7 @@ export const ROL: Record<Rol, string> = {
   PLATAFORMA: "Propietario de la plataforma",
   ADMIN: "Administrador",
   PRODUCTOR: "Productor",
-  OPERATIVO: "Operativo",
+  OPERARIO: "Operario",
   VETERINARIO: "Médico veterinario",
 };
 

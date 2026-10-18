@@ -443,3 +443,25 @@ td.acciones .btn + .btn, td.acciones .link-button + .link-button { margin-left: 
   .temporary-credential { flex-direction: column; align-items: flex-start; }
   .toasts { left: 16px; right: 16px; }
 }
+
+/* Campos de clave: ver clave, Bloq Mayús, recuperación */
+.campo-clave { position: relative; }
+.campo-clave input { padding-right: 46px; }
+.ver-clave { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
+.ver-clave:hover { background: var(--line-2); color: var(--ink); }
+.ver-clave:focus-visible { outline: 2px solid var(--green); }
+.ver-clave svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.aviso-mayus { margin: 6px 0 0; color: #8a5300; font-size: 13px; font-weight: 600; }
+.aviso-mayus::before { content: "⇪ "; }
+.olvide { margin: 8px 0 0; text-align: right; font-size: 14px; }
+.olvide a { color: var(--green); font-weight: 600; }
+.usuario-oculto { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; overflow: hidden; clip: rect(0 0 0 0); border: 0 !important; }
+.dev-enlace { display: grid; gap: 6px; margin: 4px 0 16px; padding: 12px 14px; border: 1px dashed #d8b84a; border-radius: 8px; background: #fff8dd; color: #5c4708; font-size: 13px; }
+.dev-enlace a { color: var(--green); font-weight: 700; }
+.login-card a.btn { display: flex; justify-content: center; text-decoration: none; }
+
+/* Vinculación de Telegram del cliente */
+.telegram-pasos { margin-top: 4px; }
+.telegram-pasos ol { margin: 0 0 16px; padding-left: 20px; line-height: 1.8; }
+.telegram-pasos a { color: var(--green); font-weight: 700; }
+.codigo-telegram { display: inline-block; margin-left: 4px; padding: 3px 10px; border-radius: 6px; background: var(--forest); color: var(--yellow); font: 700 14px "Manrope", monospace; letter-spacing: .04em; user-select: all; }

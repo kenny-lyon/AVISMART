@@ -116,7 +116,7 @@ export function Tabs({ items, valor, onCambio }: { items: Pestana[]; valor: stri
 
 const TONOS: Record<string, string> = {
   ACTIVO: "ok", ACTIVA: "ok", VALIDADA: "ok", ATENDIDA: "ok", CONTACTADA: "ok", CLIENTE: "acento", ENVIADA: "ok",
-  PENDIENTE: "alerta", NUEVA: "alerta", VISTA: "info", OBSERVADA: "riesgo", VENCIDA: "riesgo", SUSPENDIDA: "riesgo",
+  PENDIENTE: "alerta", NUEVA: "alerta", VISTA: "info", OBSERVADA: "riesgo", VENCIDA: "riesgo", SOSPECHOSA: "riesgo", PROGRAMADA: "info", APLICADA: "acento", SUSPENDIDA: "riesgo",
   CERRADO: "neutro", DESCARTADA: "neutro", INACTIVO: "neutro", FALLIDA: "riesgo",
   SALUD: "riesgo", RECORDATORIO: "alerta", AMBIENTE: "info", CRECIMIENTO: "acento",
 };

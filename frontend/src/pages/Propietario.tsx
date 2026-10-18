@@ -36,21 +36,22 @@ export default function Propietario() {
       setSolicitudes((lista) => lista.map((s) => (s.id === item.id ? actualizada : s)));
       setDetalle(null);
       avisarCambios();
-      avisar(estado === "CONTACTADA" ? "Solicitud marcada como contactada." : "Solicitud descartada.");
+      avisar(estado === "CONTACTADA" ? "Solicitud marcada como contactada." : estado === "NUEVA" ? "Solicitud movida a la bandeja." : "Solicitud descartada.");
     } catch (err) {
       avisar(mensajeError(err, "No se pudo actualizar"), "riesgo");
     }
   }
 
   const cuenta = (estado: string) => solicitudes.filter((s) => s.estado === estado).length;
-  const visibles = filtro === "TODAS" ? solicitudes : solicitudes.filter((s) => s.estado === filtro);
+  const bandeja = solicitudes.filter((s) => s.estado !== "SOSPECHOSA");
+  const visibles = filtro === "TODAS" ? bandeja : solicitudes.filter((s) => s.estado === filtro);
 
   return (
     <>
       <PageHeader
         eyebrow="Plataforma"
         titulo="Solicitudes"
-        descripcion="Personas y organizaciones que escribieron desde el formulario de contacto de la web."
+        descripcion="Solo llegan aquí las solicitudes con el correo confirmado. Las detectadas por el filtro antispam quedan aparte en «Sospechosas»."
         acciones={<button className="btn secondary" type="button" onClick={cargar}>Actualizar</button>}
       />
 
@@ -64,7 +65,8 @@ export default function Propietario() {
               { id: "CONTACTADA", label: "Contactadas", cantidad: cuenta("CONTACTADA") },
               { id: "CLIENTE", label: "Clientes", cantidad: cuenta("CLIENTE") },
               { id: "DESCARTADA", label: "Descartadas", cantidad: cuenta("DESCARTADA") },
-              { id: "TODAS", label: "Todas", cantidad: solicitudes.length },
+              { id: "TODAS", label: "Todas", cantidad: bandeja.length },
+              { id: "SOSPECHOSA", label: "Sospechosas", cantidad: cuenta("SOSPECHOSA") },
             ]}
           />
         </div>
@@ -79,7 +81,7 @@ export default function Propietario() {
               <tbody>
                 {visibles.map((s) => (
                   <tr key={s.id} className="clicable" onClick={() => setDetalle(s)}>
-                    <td className="celda-principal"><strong>{s.empresa || s.nombre}</strong><small>{s.nombre} · {s.email}</small></td>
+                    <td className="celda-principal"><strong>{s.empresa || s.nombre}</strong><small>{s.nombre} · {s.email}{s.motivo_sospecha ? ` · ${s.motivo_sospecha}` : ""}</small></td>
                     <td>{MOTIVOS[s.motivo] ?? s.motivo}</td>
                     <td>{s.aves || <span className="muted">—</span>}</td>
                     <td>{PLANES[s.plan] ?? s.plan}</td>
@@ -106,10 +108,13 @@ export default function Propietario() {
               {detalle.estado !== "DESCARTADA" && detalle.estado !== "CLIENTE" && (
                 <button className="btn secondary" type="button" onClick={() => cambiarEstado(detalle, "DESCARTADA")}>Descartar</button>
               )}
+              {detalle.estado === "SOSPECHOSA" && (
+                <button className="btn" type="button" onClick={() => cambiarEstado(detalle, "NUEVA")}>Es legítima</button>
+              )}
               {detalle.estado === "NUEVA" && (
                 <button className="btn secondary" type="button" onClick={() => cambiarEstado(detalle, "CONTACTADA")}>Marcar contactada</button>
               )}
-              {detalle.estado !== "CLIENTE" && (
+              {detalle.estado !== "CLIENTE" && detalle.estado !== "SOSPECHOSA" && (
                 <button className="btn primario" type="button" onClick={() => navigate("/plataforma/clientes", { state: { solicitud: detalle } })}>
                   <Icon name="flecha" size={16} /> Convertir en cliente
                 </button>
@@ -122,6 +127,8 @@ export default function Propietario() {
           <>
             <dl className="ficha">
               <dt>Estado</dt><dd><Estado valor={detalle.estado} /></dd>
+              {detalle.motivo_sospecha && (<><dt>Motivo de sospecha</dt><dd>{detalle.motivo_sospecha}</dd></>)}
+              <dt>Correo confirmado</dt><dd>{detalle.verificada_en ? cuando(detalle.verificada_en) : "No"}</dd>
               <dt>Correo</dt><dd><a href={`mailto:${detalle.email}?subject=AviSmart — respuesta a tu solicitud`}>{detalle.email}</a></dd>
               <dt>Motivo</dt><dd>{MOTIVOS[detalle.motivo] ?? detalle.motivo}</dd>
               <dt>Aves por ciclo</dt><dd>{detalle.aves || "No indicado"}</dd>

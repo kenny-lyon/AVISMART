@@ -33,7 +33,7 @@ def seed(db: Session) -> None:
     cuentas = [
         ("Administrador del sistema", "admin@avismart.local", "ADMIN"),
         ("Responsable de la granja", "productor@avismart.local", "PRODUCTOR"),
-        ("Personal de galpón", "operativo@avismart.local", "OPERATIVO"),
+        ("Personal de galpón", "operario@avismart.local", "OPERARIO"),
         ("Servicio veterinario", "veterinario@avismart.local", "VETERINARIO"),
     ]
     usuarios = {}
@@ -85,7 +85,7 @@ def seed(db: Session) -> None:
         db.add(
             RegistroDiario(
                 lote_id=lote.id,
-                usuario_id=usuarios["OPERATIVO"].id,
+                usuario_id=usuarios["OPERARIO"].id,
                 fecha=dia,
                 mortalidad=muertos,
                 alimento_kg=round(70 + i * 16, 1),

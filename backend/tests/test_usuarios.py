@@ -61,7 +61,7 @@ class UsuariosApiTest(unittest.TestCase):
     def test_alta_clave_temporal_cambio_obligatorio_y_desactivacion(self):
         alta = self.client.post(
             "/api/usuarios",
-            json={"nombre": "Operador Uno", "email": "operador@prueba.local", "rol": "OPERATIVO"},
+            json={"nombre": "Operador Uno", "email": "operador@prueba.local", "rol": "OPERARIO"},
             headers=self.admin_headers,
         )
         self.assertEqual(alta.status_code, 200, alta.text)
@@ -86,11 +86,13 @@ class UsuariosApiTest(unittest.TestCase):
         )
         self.assertEqual(cambio.status_code, 200, cambio.text)
         self.assertFalse(cambio.json()["debe_cambiar_clave"])
+        self.assertEqual(self.client.get("/api/resumen", headers=headers).status_code, 401, "la sesión con la clave vieja se cierra")
+        headers = {"Authorization": f"Bearer {cambio.json()['token']}"}
         self.assertEqual(self.client.get("/api/resumen", headers=headers).status_code, 200)
 
         sin_permiso = self.client.post(
             "/api/usuarios",
-            json={"nombre": "Otro Usuario", "email": "otro@prueba.local", "rol": "OPERATIVO"},
+            json={"nombre": "Otro Usuario", "email": "otro@prueba.local", "rol": "OPERARIO"},
             headers=headers,
         )
         self.assertEqual(sin_permiso.status_code, 403)

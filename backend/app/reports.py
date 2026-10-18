@@ -37,11 +37,18 @@ def generar_pdf(lote, cierre, panel, registros, vacunas, tratamientos, alertas) 
         ["Ingreso", lote.fecha_ingreso.isoformat(), "Cierre", cierre.fecha_cierre.isoformat()],
         ["Población inicial", lote.poblacion_inicial, "Aves vendidas", cierre.aves_vendidas],
         ["Mortalidad", f'{panel["mortalidad_acumulada"]:.2f}%', "FCR", panel["fcr"] or "—"],
-        ["Peso final", f'{panel["peso_actual_g"]:.0f} g', "EPEF", panel["epef"] or "—"],
+        ["Peso promedio de venta", f'{cierre.peso_total_kg * 1000 / cierre.aves_vendidas:,.0f} g', "EPEF", panel["epef"] or "—"],
+        ["Último pesaje", f'{panel["peso_actual_g"]:.0f} g', "Peso total vendido", f"{cierre.peso_total_kg:,.1f} kg"],
     ]
     tabla = Table(resumen, colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
     tabla.setStyle(_estilo_tabla())
-    elementos.extend([tabla, Spacer(1, 6 * mm), Paragraph("Evolución de peso", estilos["Heading2"])])
+    elementos.extend([tabla, Spacer(1, 5 * mm), Paragraph("Recepción de pollitos", estilos["Heading2"])])
+    tabla = Table(_recepcion_filas(lote), colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
+    tabla.setStyle(_estilo_tabla())
+    elementos.extend([tabla])
+    if lote.observaciones:
+        elementos.append(Paragraph(f"Observaciones de la recepción: {lote.observaciones}", estilos["BodyText"]))
+    elementos.extend([Spacer(1, 6 * mm), Paragraph("Evolución de peso", estilos["Heading2"])])
 
     puntos = [(i, r.peso_muestra_g) for i, r in enumerate(registros)]
     if len(puntos) >= 2:
@@ -102,6 +109,28 @@ def generar_pdf(lote, cierre, panel, registros, vacunas, tratamientos, alertas) 
     return salida
 
 
+def _o(valor, sufijo: str = "") -> str:
+    return "—" if valor in (None, "") else f"{valor}{sufijo}"
+
+
+SEXOS = {"MIXTO": "Mixto", "MACHOS": "Machos", "HEMBRAS": "Hembras"}
+
+
+def _recepcion_filas(lote) -> list[list]:
+    """Datos del ingreso del lote; los lotes antiguos pueden no tenerlos."""
+    costo = None
+    if lote.precio_pollito is not None:
+        costo = _dinero(lote.precio_pollito * (lote.cantidad_recibida or lote.poblacion_inicial))
+    return [
+        ["Incubadora / proveedor", _o(lote.proveedor), "Guía de remisión", _o(lote.guia)],
+        ["Sexo", SEXOS.get(lote.sexo or "", _o(lote.sexo)), "Fecha de llegada", lote.fecha_ingreso.isoformat()],
+        ["Pollitos recibidos", _o(lote.cantidad_recibida), "Descartados al llegar", _o(lote.descarte_llegada)],
+        ["Alojados en el galpón", lote.poblacion_inicial, "Peso al llegar", _o(lote.peso_llegada_g, " g")],
+        ["Precio por pollito", _dinero(lote.precio_pollito) if lote.precio_pollito is not None else "—", "Costo de pollitos", _o(costo)],
+        ["Meta de peso", _o(lote.peso_objetivo_g, " g"), "Edad de saca prevista", _o(lote.edad_saca_dias, " días")],
+    ]
+
+
 def _estilo_tabla(encabezado: bool = False):
     from reportlab.lib import colors
     from reportlab.platypus import TableStyle
@@ -140,6 +169,8 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
     resumen.append(["Fecha de cierre", cierre.fecha_cierre])
     resumen.append(["Población inicial", lote.poblacion_inicial])
     resumen.append(["Aves vendidas", cierre.aves_vendidas])
+    resumen.append(["Peso total vendido (kg)", cierre.peso_total_kg])
+    resumen.append(["Peso promedio de venta (g)", round(cierre.peso_total_kg * 1000 / cierre.aves_vendidas)])
     resumen.append(["Mortalidad acumulada (%)", panel["mortalidad_acumulada"]])
     resumen.append(["FCR", panel["fcr"]])
     resumen.append(["EPEF", panel["epef"]])
@@ -147,6 +178,25 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
     resumen.append(["Costos totales", cierre.total_costos])
     resumen.append(["Margen", cierre.margen])
     resumen.append(["Observaciones", cierre.observaciones])
+
+    recepcion = libro.create_sheet("Recepción", 1)
+    recepcion.append(["Dato", "Valor"])
+    for fila in [
+        ["Incubadora / proveedor", lote.proveedor],
+        ["Guía de remisión", lote.guia],
+        ["Sexo", SEXOS.get(lote.sexo or "", lote.sexo)],
+        ["Fecha de llegada", lote.fecha_ingreso],
+        ["Pollitos recibidos", lote.cantidad_recibida],
+        ["Descartados al llegar", lote.descarte_llegada],
+        ["Alojados en el galpón", lote.poblacion_inicial],
+        ["Peso al llegar (g)", lote.peso_llegada_g],
+        ["Precio por pollito (S/)", lote.precio_pollito],
+        ["Costo de pollitos (S/)", round(lote.precio_pollito * (lote.cantidad_recibida or lote.poblacion_inicial), 2) if lote.precio_pollito is not None else None],
+        ["Meta de peso (g)", lote.peso_objetivo_g],
+        ["Edad de saca prevista (días)", lote.edad_saca_dias],
+        ["Observaciones de la recepción", lote.observaciones],
+    ]:
+        recepcion.append(fila)
 
     hoja = libro.create_sheet("Registros diarios")
     hoja.append(["Fecha", "Mortalidad", "Alimento kg", "Agua L", "Peso muestra g"])
@@ -164,11 +214,11 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
         hoja.add_chart(grafico, "G2")
 
     sanidad = libro.create_sheet("Sanidad")
-    sanidad.append(["Tipo", "Nombre", "Fecha", "Estado", "Detalle"])
+    sanidad.append(["Tipo", "Nombre", "Fecha programada / inicio", "Aplicada", "Estado", "Detalle"])
     for v in vacunas:
-        sanidad.append(["Vacuna", v.nombre, v.fecha_programada, v.estado, v.observacion])
+        sanidad.append(["Vacuna", v.nombre, v.fecha_programada, v.fecha_aplicacion, v.estado, v.observacion])
     for t in tratamientos:
-        sanidad.append(["Tratamiento", t.medicamento, t.fecha_inicio, t.estado, t.diagnostico])
+        sanidad.append(["Tratamiento", t.medicamento, t.fecha_inicio, None, t.estado, t.diagnostico])
 
     hoja_alertas = libro.create_sheet("Alertas")
     hoja_alertas.append(["Fecha", "Tipo", "Mensaje", "Estado", "Observación"])

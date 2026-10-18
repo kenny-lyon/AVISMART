@@ -39,6 +39,7 @@ def create_token(usuario: Usuario) -> str:
     payload = {
         "sub": str(usuario.id),
         "rol": usuario.rol,
+        "ver": usuario.version_sesion or 0,
         "exp": datetime.now(timezone.utc) + timedelta(hours=12),
     }
     return jwt.encode(payload, SECRET, algorithm=ALGO)
@@ -53,14 +54,35 @@ def get_current_user(
     try:
         payload = jwt.decode(creds.credentials, SECRET, algorithms=[ALGO])
         user_id = int(payload["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError):
+        version = int(payload.get("ver", 0))
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Sesión inválida")
     usuario = db.get(Usuario, user_id)
     if usuario is None or not usuario.activo:
         raise HTTPException(status_code=401, detail="Sesión inválida")
+    if version != (usuario.version_sesion or 0):
+        # La clave cambió después de abrir esta sesión.
+        raise HTTPException(status_code=401, detail="Tu sesión se cerró porque la clave cambió. Vuelve a entrar")
     if organizacion_suspendida(usuario):
         raise HTTPException(status_code=401, detail="El acceso de su organización está suspendido")
     return usuario
+
+
+def problema_con_clave_nueva(clave: str) -> str | None:
+    if len(clave) < 10:
+        return "La clave debe tener al menos 10 caracteres"
+    if clave != clave.strip():
+        return "La clave no puede empezar ni terminar con espacios"
+    return None
+
+
+def establecer_clave(usuario: Usuario, clave: str, temporal: bool) -> None:
+    """Guarda la clave y cierra todas las sesiones abiertas de la cuenta."""
+    usuario.password_hash = hash_password(clave)
+    usuario.debe_cambiar_clave = 1 if temporal else 0
+    usuario.version_sesion = (usuario.version_sesion or 0) + 1
+    usuario.reset_token_hash = None
+    usuario.reset_expira = None
 
 
 def organizacion_suspendida(usuario: Usuario) -> bool:

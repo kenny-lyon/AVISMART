@@ -8,6 +8,11 @@ type VacunaCatalogo = { nombre: string; via: string; dia: number; nota: string }
 type Medicamento = { nombre: string; uso: string; dosis: string[]; vias: string[]; dias: number; carencia: number };
 const TRAT_VACIO = { medicamento: "", dosis: "", via: "", inicio: hoyLocal(), dias: "", carencia: "", aves: "" };
 
+/** Última fecha que se puede programar: 70 días después del ingreso. */
+function finCampana(ingreso: string) {
+  return diaDelLote(ingreso, 70);
+}
+
 /** Fecha de ingreso + días, en formato YYYY-MM-DD. */
 function diaDelLote(ingreso: string, dias: number) {
   const [y, m, d] = ingreso.split("-").map(Number);
@@ -32,11 +37,13 @@ export default function Sanidad() {
   const [nuevaVac, setNuevaVac] = useState(false);
   const [vac, setVac] = useState({ nombre: "", fecha: hoyLocal() });
   const [revision, setRevision] = useState<Revision | null>(null);
+  const [aplicando, setAplicando] = useState<Vacuna | null>(null);
+  const [aplicacion, setAplicacion] = useState({ fecha: hoyLocal(), nota: "" });
   const [nota, setNota] = useState("");
 
   const lote = resumen?.lotes.find((l) => l.id === loteId);
   const activo = lote?.estado === "ACTIVO";
-  const puedeCargar = (usuario?.rol === "PRODUCTOR" || usuario?.rol === "OPERATIVO") && activo;
+  const puedeCargar = (usuario?.rol === "PRODUCTOR" || usuario?.rol === "OPERARIO") && activo;
   const esVet = usuario?.rol === "VETERINARIO";
   const hoy = hoyLocal();
 
@@ -119,7 +126,7 @@ export default function Sanidad() {
   function guardarVacuna() {
     return enviar(
       () => api(`/lotes/${loteId}/sanidad`, { method: "POST", body: JSON.stringify({ nombre: vac.nombre, fecha_programada: vac.fecha }) }),
-      "Vacuna programada. Queda pendiente de validación del veterinario.",
+      "Vacuna propuesta. Falta que el veterinario apruebe la fecha.",
       () => {
         setNuevaVac(false);
         setVac({ nombre: "", fecha: hoyLocal() });
@@ -130,11 +137,55 @@ export default function Sanidad() {
   function decidir(decision: "VALIDADA" | "OBSERVADA") {
     if (!revision) return;
     const ruta = revision.tipo === "vacuna" ? `/vacunas/${revision.item.id}/validar` : `/tratamientos/${revision.item.id}/validar`;
+    const mensaje =
+      decision === "OBSERVADA"
+        ? revision.tipo === "tratamiento"
+          ? "Tratamiento observado. La carencia sigue contando: el medicamento ya se aplicó."
+          : "Vacuna observada."
+        : revision.tipo === "vacuna" && revision.item.estado === "PENDIENTE"
+          ? "Fecha aprobada. El personal ya puede registrar la aplicación."
+          : "Conformidad registrada.";
     return enviar(
       () => api(ruta, { method: "POST", body: JSON.stringify({ decision, observacion: nota }) }),
-      decision === "VALIDADA" ? "Registro validado." : "Registro observado.",
+      mensaje,
       () => setRevision(null),
     );
+  }
+
+  function abrirAplicacion(v: Vacuna) {
+    setError("");
+    setAplicacion({ fecha: v.fecha_programada <= hoyLocal() ? v.fecha_programada : hoyLocal(), nota: "" });
+    setAplicando(v);
+  }
+
+  function guardarAplicacion() {
+    if (!aplicando) return;
+    return enviar(
+      () =>
+        api(`/vacunas/${aplicando.id}/aplicar`, {
+          method: "POST",
+          body: JSON.stringify({ fecha_aplicacion: aplicacion.fecha, nota: aplicacion.nota }),
+        }),
+      "Aplicación registrada. Queda pendiente la conformidad del veterinario.",
+      () => setAplicando(null),
+    );
+  }
+
+  /** Qué toca hacer con la vacuna según su etapa y el rol de quien mira. */
+  function accionVacuna(v: Vacuna): { texto: string; hacer: () => void } {
+    if (esVet && v.estado === "PENDIENTE") return { texto: "Aprobar fecha", hacer: () => revisar({ tipo: "vacuna", item: v }) };
+    if (esVet && v.estado === "APLICADA") return { texto: "Dar conformidad", hacer: () => revisar({ tipo: "vacuna", item: v }) };
+    if (puedeCargar && v.estado === "PROGRAMADA") return { texto: "Registrar aplicación", hacer: () => abrirAplicacion(v) };
+    return { texto: "Ver detalle", hacer: () => revisar({ tipo: "vacuna", item: v }) };
+  }
+
+  function estadoVacuna(v: Vacuna) {
+    const atrasada = v.fecha_programada <= hoy;
+    if (v.estado === "PENDIENTE") return atrasada ? <Estado valor="VENCIDA" texto="Fecha sin aprobar" /> : <Estado valor="PENDIENTE" texto="Fecha por aprobar" />;
+    if (v.estado === "PROGRAMADA") return atrasada ? <Estado valor="VENCIDA" texto="Por aplicar" /> : <Estado valor="PROGRAMADA" texto="Programada" />;
+    if (v.estado === "APLICADA") return <Estado valor="APLICADA" texto="Aplicada · por revisar" />;
+    if (v.estado === "VALIDADA") return <Estado valor="VALIDADA" texto="Conforme" />;
+    return <Estado valor={v.estado} />;
   }
 
   function revisar(r: Revision) {
@@ -144,14 +195,18 @@ export default function Sanidad() {
   }
 
   const pendientesT = tratamientos.filter((t) => t.estado === "PENDIENTE").length;
-  const pendientesV = vacunas.filter((v) => v.estado === "PENDIENTE").length;
+  const pendientesV = vacunas.filter((v) => v.estado === "PENDIENTE" || v.estado === "APLICADA").length;
   const enCarencia = tratamientos.filter((t) => t.en_carencia);
+  const puedeRevisar =
+    esVet &&
+    !!revision &&
+    (revision.tipo === "tratamiento" ? revision.item.estado === "PENDIENTE" : ["PENDIENTE", "APLICADA"].includes(revision.item.estado));
 
   return (
     <>
       <PageHeader
         titulo="Vacunas y tratamientos"
-        descripcion="El personal registra lo aplicado en el lote. El sistema cuenta la carencia hasta la faena y el veterinario valida o deja su observación."
+        descripcion="Vacunas: el veterinario aprueba la fecha, el personal registra la aplicación y el veterinario da su conformidad. Tratamientos: el sistema cuenta la carencia hasta la faena."
         acciones={
           puedeCargar && (
             <>
@@ -233,11 +288,11 @@ export default function Sanidad() {
             <div className="tabla-wrap">
               <table>
                 <thead>
-                  <tr><th>Vacuna</th><th>Fecha programada</th><th>Estado</th><th /></tr>
+                  <tr><th>Vacuna</th><th>Programada</th><th>Aplicada</th><th>Estado</th><th /></tr>
                 </thead>
                 <tbody>
                   {vacunas.map((v) => {
-                    const vencida = v.estado === "PENDIENTE" && v.fecha_programada <= hoy;
+                    const accion = accionVacuna(v);
                     return (
                       <tr key={v.id}>
                         <td className="celda-principal">
@@ -245,11 +300,10 @@ export default function Sanidad() {
                           {v.observacion && <small>{v.observacion}</small>}
                         </td>
                         <td>{fecha(v.fecha_programada)}</td>
-                        <td>{vencida ? <Estado valor="VENCIDA" texto="Vencida" /> : <Estado valor={v.estado} />}</td>
+                        <td>{v.fecha_aplicacion ? fecha(v.fecha_aplicacion) : <span className="muted">—</span>}</td>
+                        <td>{estadoVacuna(v)}</td>
                         <td className="acciones">
-                          <button className="link-button" type="button" onClick={() => revisar({ tipo: "vacuna", item: v })}>
-                            {esVet && v.estado === "PENDIENTE" ? "Revisar" : "Ver detalle"}
-                          </button>
+                          <button className="link-button" type="button" onClick={accion.hacer}>{accion.texto}</button>
                         </td>
                       </tr>
                     );
@@ -292,7 +346,7 @@ export default function Sanidad() {
         </Seccion>
         <Seccion titulo="Aplicación y carencia">
           <Campo label="Primer día">
-            <input type="date" value={trat.inicio} onChange={(e) => setTrat({ ...trat, inicio: e.target.value })} required />
+            <input type="date" min={lote?.fecha_ingreso} max={hoyLocal()} value={trat.inicio} onChange={(e) => setTrat({ ...trat, inicio: e.target.value })} required />
           </Campo>
           <Campo label="Días de tratamiento">
             <input type="number" min="1" max="30" value={trat.dias} onChange={(e) => setTrat({ ...trat, dias: e.target.value })} required />
@@ -309,7 +363,7 @@ export default function Sanidad() {
       <DrawerForm
         abierto={nuevaVac}
         titulo="Programar vacuna"
-        descripcion="Queda pendiente hasta que el veterinario la valide."
+        descripcion="Propón la fecha. El veterinario la aprueba y después se registra la aplicación."
         onCerrar={() => setNuevaVac(false)}
         onGuardar={guardarVacuna}
         guardando={guardando}
@@ -330,7 +384,27 @@ export default function Sanidad() {
             </select>
           </Campo>
           <Campo label="Fecha programada" ancho ayuda={vacunaElegida ? "Propuesta según la edad del lote; puedes cambiarla." : undefined}>
-            <input type="date" value={vac.fecha} onChange={(e) => setVac({ ...vac, fecha: e.target.value })} required />
+            <input type="date" min={lote?.fecha_ingreso} max={lote ? finCampana(lote.fecha_ingreso) : undefined} value={vac.fecha} onChange={(e) => setVac({ ...vac, fecha: e.target.value })} required />
+          </Campo>
+        </Seccion>
+      </DrawerForm>
+
+      <DrawerForm
+        abierto={aplicando !== null}
+        titulo="Registrar aplicación"
+        descripcion={aplicando ? `${aplicando.nombre} · programada para el ${fecha(aplicando.fecha_programada)}` : undefined}
+        onCerrar={() => setAplicando(null)}
+        onGuardar={guardarAplicacion}
+        guardando={guardando}
+        textoGuardar="Registrar aplicación"
+        error={error}
+      >
+        <Seccion titulo="Aplicación">
+          <Campo label="Fecha en que se aplicó" ancho>
+            <input type="date" value={aplicacion.fecha} max={hoyLocal()} min={lote?.fecha_ingreso} onChange={(e) => setAplicacion({ ...aplicacion, fecha: e.target.value })} required />
+          </Campo>
+          <Campo label="Nota" ancho ayuda="Opcional: lote o serie del frasco, aves vacunadas, incidencias.">
+            <textarea rows={3} maxLength={500} value={aplicacion.nota} onChange={(e) => setAplicacion({ ...aplicacion, nota: e.target.value })} />
           </Campo>
         </Seccion>
       </DrawerForm>
@@ -341,10 +415,12 @@ export default function Sanidad() {
         descripcion={revision?.tipo === "vacuna" ? "Vacuna del lote" : "Tratamiento del lote"}
         onCerrar={() => setRevision(null)}
         pie={
-          esVet && revision?.item.estado === "PENDIENTE" ? (
+          puedeRevisar ? (
             <>
               <button className="btn secondary" type="button" disabled={guardando} onClick={() => decidir("OBSERVADA")}>Observar</button>
-              <button className="btn" type="button" disabled={guardando} onClick={() => decidir("VALIDADA")}>Validar</button>
+              <button className="btn" type="button" disabled={guardando} onClick={() => decidir("VALIDADA")}>
+                {revision?.tipo === "vacuna" ? (revision.item.estado === "PENDIENTE" ? "Aprobar fecha" : "Dar conformidad") : "Validar"}
+              </button>
             </>
           ) : (
             <button className="btn secondary" type="button" onClick={() => setRevision(null)}>Cerrar</button>
@@ -366,12 +442,19 @@ export default function Sanidad() {
           <dl className="ficha">
             <dt>Estado</dt><dd><Estado valor={revision.item.estado} /></dd>
             <dt>Programada</dt><dd>{fecha(revision.item.fecha_programada)}</dd>
-            {revision.item.observacion && (<><dt>Observación</dt><dd>{revision.item.observacion}</dd></>)}
+            <dt>Aplicada</dt><dd>{revision.item.fecha_aplicacion ? fecha(revision.item.fecha_aplicacion) : "Todavía no"}</dd>
+            {revision.item.nota_aplicacion && (<><dt>Nota del galpón</dt><dd>{revision.item.nota_aplicacion}</dd></>)}
+            {revision.item.observacion && (<><dt>Observación del veterinario</dt><dd>{revision.item.observacion}</dd></>)}
           </dl>
         )}
-        {esVet && revision?.item.estado === "PENDIENTE" && (
+        {puedeRevisar && revision && (
           <Campo label={revision.tipo === "vacuna" ? "Observación" : "Diagnóstico o indicación"} ayuda="Queda registrado con tu nombre.">
-            <textarea rows={4} value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej. Aplicación conforme" />
+            <textarea
+              rows={4}
+              value={nota}
+              onChange={(e) => setNota(e.target.value)}
+              placeholder={revision.tipo === "vacuna" && revision.item.estado === "PENDIENTE" ? "Ej. Fecha adecuada para la edad del lote" : "Ej. Aplicación conforme"}
+            />
           </Campo>
         )}
       </Drawer>
