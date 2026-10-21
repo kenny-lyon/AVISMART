@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, type Alerta } from "../api";
 import { useAuth } from "../auth";
 import { useLote } from "../lote";
@@ -7,7 +7,7 @@ import Layout, { type NavGrupo } from "./Layout";
 import { Icon, Panel, Vacio } from "./ui";
 
 /** Pantallas que necesitan un lote elegido para mostrar algo. */
-const NECESITAN_LOTE = ["/panel", "/registro", "/sanidad", "/camara"];
+const NECESITAN_LOTE = ["/panel", "/registro", "/sanidad", "/alimentacion", "/camara"];
 
 function SinLotes({ puedeConfigurar }: { puedeConfigurar: boolean }) {
   return (
@@ -22,7 +22,7 @@ function SinLotes({ puedeConfigurar }: { puedeConfigurar: boolean }) {
               <li><b>2</b> Abre el primer lote en uno de los galpones.</li>
             </ol>
           ) : (
-            "Cuando el productor o el administrador abra un lote, aparecerá aquí."
+            "Cuando el productor abra un lote, aparecerá aquí."
           )
         }
         accion={
@@ -35,6 +35,23 @@ function SinLotes({ puedeConfigurar }: { puedeConfigurar: boolean }) {
         }
       />
     </Panel>
+  );
+}
+
+/** Franja visible mientras la plataforma trabaja dentro de un cliente. */
+function FranjaSoporte({ cliente }: { cliente: { id: number; nombre: string } }) {
+  const { salirSoporte } = useAuth();
+  const navigate = useNavigate();
+  return (
+    <div className="aviso alerta franja-soporte">
+      <Icon name="cuentas" />
+      <span>
+        <b>Modo soporte</b> en <b>{cliente.nombre}</b>. Trabajas con los permisos de su productor y lo que hagas queda registrado a tu nombre.
+      </span>
+      <button className="btn" type="button" onClick={() => salirSoporte().then(() => navigate(`/plataforma/clientes/${cliente.id}`, { replace: true }))}>
+        Salir del modo soporte
+      </button>
+    </div>
   );
 }
 
@@ -71,7 +88,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         { to: "/camara", label: "Cámara", icono: "camara" as const },
       ],
     },
-    { titulo: "Sanidad", items: [{ to: "/sanidad", label: "Vacunas y tratamientos", icono: "sanidad" }] },
+    {
+      titulo: "Sanidad y alimento",
+      items: [
+        { to: "/sanidad", label: "Vacunas y tratamientos", icono: "sanidad" },
+        { to: "/alimentacion", label: "Alimentación", icono: "alimento" },
+      ],
+    },
   ];
   if (puede("ADMIN", "PRODUCTOR")) {
     grupos.push({
@@ -120,6 +143,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         </>
       }
     >
+      {usuario.soporte && usuario.organizacion && <FranjaSoporte cliente={usuario.organizacion} />}
       {sinLotes ? <SinLotes puedeConfigurar={puede("ADMIN", "PRODUCTOR")} /> : children}
     </Layout>
   );

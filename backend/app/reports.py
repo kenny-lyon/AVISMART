@@ -199,9 +199,9 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
         recepcion.append(fila)
 
     hoja = libro.create_sheet("Registros diarios")
-    hoja.append(["Fecha", "Mortalidad", "Alimento kg", "Agua L", "Peso muestra g"])
+    hoja.append(["Fecha", "Mortalidad", "Alimento kg", "Agua L", "Peso muestra g", "Tipo de alimento"])
     for r in registros:
-        hoja.append([r.fecha, r.mortalidad, r.alimento_kg, r.agua_l, r.peso_muestra_g])
+        hoja.append([r.fecha, r.mortalidad, r.alimento_kg, r.agua_l, r.peso_muestra_g, r.fase_alimento or ""])
     if registros:
         grafico = LineChart()
         grafico.title = "Evolución del peso de muestra"
@@ -211,7 +211,7 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
         categorias = Reference(hoja, min_col=1, min_row=2, max_row=1 + len(registros))
         grafico.add_data(datos, titles_from_data=True)
         grafico.set_categories(categorias)
-        hoja.add_chart(grafico, "G2")
+        hoja.add_chart(grafico, "H2")
 
     sanidad = libro.create_sheet("Sanidad")
     sanidad.append(["Tipo", "Nombre", "Fecha programada / inicio", "Aplicada", "Estado", "Detalle"])

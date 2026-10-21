@@ -1,19 +1,30 @@
-INFO:     127.0.0.1:64401 - "GET /api/salud HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/salud HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 429 Too Many Requests
-INFO:     127.0.0.1:0 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61254 - "GET /api/salud HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56981 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56983 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56984 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56985 - "GET /api/resumen HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56986 - "GET /api/lotes/4/alimentacion HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56987 - "POST /api/lotes/4/tratamientos/indicar HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:56988 - "GET /api/alertas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56989 - "GET /api/lotes/4/sanidad HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56990 - "POST /api/tratamientos//iniciar HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56991 - "POST /api/lotes/4/sanidad HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56992 - "POST /api/lotes/4/registros HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56994 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56996 - "POST /api/lotes/4/tratamientos/indicar HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:57005 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57007 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57008 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57009 - "POST /api/lotes/4/tratamientos/indicar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57010 - "GET /api/alertas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57011 - "GET /api/lotes/4/sanidad HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57014 - "POST /api/tratamientos/3/iniciar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57015 - "GET /api/alertas HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57020 - "POST /api/auth/login HTTP/1.1" 200 OK
 INFO:     127.0.0.1:0 - "GET /api/me HTTP/1.1" 200 OK
 INFO:     127.0.0.1:0 - "GET /api/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:0 - "GET /api/alertas HTTP/1.1" 200 OK
 INFO:     127.0.0.1:0 - "GET /api/resumen HTTP/1.1" 200 OK
 INFO:     127.0.0.1:0 - "GET /api/alertas HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/usuarios HTTP/1.1" 200 OK
 INFO:     127.0.0.1:0 - "GET /api/resumen HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/alertas HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/usuarios HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/organizacion/telegram HTTP/1.1" 200 OK
-INFO:     127.0.0.1:0 - "GET /api/organizacion/telegram HTTP/1.1" 200 OK
+INFO:     127.0.0.1:0 - "GET /api/lotes/4/alimentacion HTTP/1.1" 200 OK

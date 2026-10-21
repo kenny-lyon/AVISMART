@@ -22,6 +22,7 @@ import Clientes from "./pages/plataforma/Clientes";
 import CuentasPlataforma from "./pages/plataforma/CuentasPlataforma";
 import Propietario from "./pages/Propietario";
 import Registro from "./pages/Registro";
+import Alimentacion from "./pages/Alimentacion";
 import Sanidad from "./pages/Sanidad";
 import Servicios from "./pages/Servicios";
 
@@ -76,6 +77,7 @@ export default function App() {
       <Route element={<ZonaCliente />}>
         <Route path="/panel" element={<Panel />} />
         <Route path="/registro" element={<Registro />} />
+        <Route path="/alimentacion" element={<Alimentacion />} />
         <Route path="/sanidad" element={<Sanidad />} />
         <Route path="/camara" element={<Camara />} />
         <Route path="/alertas" element={<Alertas />} />

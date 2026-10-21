@@ -230,8 +230,6 @@
 .campo-trampa { position:absolute !important; left:-10000px; width:1px; height:1px; overflow:hidden; }
 .contact-turnstile { margin-top:18px; min-height:65px; }
 .contact-nota { font-size:14px; }
-.contact-dev { display:grid; gap:6px; max-width:42ch; margin:6px 0 18px; padding:12px 14px; border:1px dashed #d8b84a; border-radius:8px; background:#fff8dd; color:#5c4708; font-size:13px; text-align:left; }
-.contact-dev a { color:var(--green); font-weight:700; }
 .confirmar-page { min-height:100vh; display:grid; place-items:center; padding:24px; background:var(--cream); }
 .confirmar-card { width:min(460px,100%); padding:38px 32px; border:1px solid var(--line); border-radius:14px; background:var(--paper); text-align:center; box-shadow:0 20px 50px rgba(16,47,37,.08); }
 .confirmar-card img { width:64px; height:64px; object-fit:contain; }

@@ -130,7 +130,7 @@ export default function Alertas() {
             <dl className="ficha" style={{ marginTop: 18 }}>
               <dt>Estado</dt><dd><Estado valor={detalle.estado} /></dd>
               <dt>Creada</dt><dd>{fecha(detalle.creada_en)} {detalle.creada_en.slice(11, 16)}</dd>
-              <dt>La atiende</dt><dd>{detalle.requiere_veterinario ? "Médico veterinario" : "Productor o administrador"}</dd>
+              <dt>La atiende</dt><dd>{detalle.requiere_veterinario ? "Médico veterinario" : "Productor"}</dd>
               <dt>Telegram</dt><dd>{detalle.notificacion_estado.toLowerCase().replace("_", " ")}</dd>
               {detalle.observacion && (<><dt>Qué se hizo</dt><dd>{detalle.observacion}</dd></>)}
             </dl>
@@ -140,7 +140,7 @@ export default function Alertas() {
               </Campo>
             )}
             {!puede(detalle) && detalle.estado !== "ATENDIDA" && (
-              <p className="muted">Esta alerta la atiende {detalle.requiere_veterinario ? "el médico veterinario" : "el productor o el administrador"}.</p>
+              <p className="muted">Esta alerta la atiende {detalle.requiere_veterinario ? "el médico veterinario" : "el productor"}.</p>
             )}
           </>
         )}

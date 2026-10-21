@@ -69,6 +69,7 @@ export default function PanelPage() {
           `ingreso ${fecha(panel.lote.fecha_ingreso)}`,
           panel.lote.proveedor ? `origen ${panel.lote.proveedor}` : null,
           panel.lote.edad_saca_dias ? `saca prevista día ${panel.lote.edad_saca_dias} (${num(panel.lote.peso_objetivo_g)} g)` : null,
+          panel.alimento_hoy ? `alimento: ${panel.alimento_hoy.nombre}` : null,
         ].filter(Boolean).join(" · ")}
         acciones={
           puedeRegistrar && (

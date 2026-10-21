@@ -21,6 +21,32 @@ const RECEPCION_VACIA = {
 };
 const CIERRE_VACIO = { fecha: "", aves: "", peso: "", precio: "", pollitos: "", alimento: "", sanidad: "", otros: "0", observaciones: "" };
 
+type CatalogoLotes = {
+  lineas: { nombre: string; curva: [number, number][] }[];
+  incubadoras: string[];
+  vacunas_incubadora: { nombre: string; via: string }[];
+};
+const LINEAS_BASE = ["Ross 308", "Cobb 500", "Hubbard", "Arbor Acres"];
+
+/** Peso esperado (g) a cierta edad según la curva de la línea: interpolación lineal entre semanas. */
+function pesoCurva(curva: [number, number][] | undefined, dia: number) {
+  if (!curva?.length || !dia) return null;
+  if (dia >= curva[curva.length - 1][0]) return curva[curva.length - 1][1];
+  for (let i = 1; i < curva.length; i++) {
+    const [d0, p0] = curva[i - 1];
+    const [d1, p1] = curva[i];
+    if (dia <= d1) return Math.round(p0 + ((p1 - p0) * (dia - d0)) / (d1 - d0));
+  }
+  return null;
+}
+
+/** Fecha local (AAAA-MM-DD) de hace `dias` días. */
+function haceDias(dias: number) {
+  const f = new Date();
+  f.setDate(f.getDate() - dias);
+  return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+}
+
 export default function Lotes() {
   const { usuario } = useAuth();
   const { resumen, recargar, elegir } = useLote();
@@ -32,7 +58,9 @@ export default function Lotes() {
 
   const [abriendo, setAbriendo] = useState(false);
   const [galponId, setGalponId] = useState<number | null>(null);
-  const [linea, setLinea] = useState("Cobb");
+  const [linea, setLinea] = useState("Cobb 500");
+  const [catalogo, setCatalogo] = useState<CatalogoLotes | null>(null);
+  const [vacunasIncubadora, setVacunasIncubadora] = useState<string[]>([]);
   const [fechaIngreso, setFechaIngreso] = useState(hoy);
   const [recepcion, setRecepcion] = useState(RECEPCION_VACIA);
 
@@ -56,10 +84,15 @@ export default function Lotes() {
   const puedeGestionar = usuario?.rol === "PRODUCTOR" || usuario?.rol === "ADMIN";
   const visibles = filtro === "TODOS" ? lotes : lotes.filter((l) => l.estado === filtro);
 
+  const curvaLinea = catalogo?.lineas.find((l) => l.nombre === linea)?.curva;
+  const pesoEsperadoSaca = pesoCurva(curvaLinea, Number(recepcion.edadSaca));
+
   function abrirFormulario() {
     setError("");
+    if (!catalogo) api<CatalogoLotes>("/catalogo/lotes").then(setCatalogo).catch(() => undefined);
     setFechaIngreso(hoy());
     setRecepcion(RECEPCION_VACIA);
+    setVacunasIncubadora([]);
     setGalponId(libres[0]?.id ?? null);
     setAbriendo(true);
   }
@@ -85,6 +118,7 @@ export default function Lotes() {
           peso_objetivo_g: Number(recepcion.pesoObjetivo),
           edad_saca_dias: Number(recepcion.edadSaca),
           observaciones: recepcion.observaciones,
+          vacunas_incubadora: vacunasIncubadora,
         }),
       });
       await recargar();
@@ -267,10 +301,9 @@ export default function Lotes() {
               })}
             </select>
           </Campo>
-          <Campo label="Línea genética">
+          <Campo label="Línea genética" ayuda="Define la curva de peso con la que se compara el lote.">
             <select value={linea} onChange={(e) => setLinea(e.target.value)}>
-              <option>Ross</option>
-              <option>Cobb</option>
+              {(catalogo?.lineas.map((l) => l.nombre) ?? LINEAS_BASE).map((n) => <option key={n}>{n}</option>)}
             </select>
           </Campo>
           <Campo label="Sexo">
@@ -280,22 +313,50 @@ export default function Lotes() {
           </Campo>
         </Seccion>
         <Seccion titulo="2. Origen de los pollitos">
-          <Campo label="Incubadora o proveedor" ancho>
-            <input value={recepcion.proveedor} onChange={setR("proveedor")} placeholder="Ej. Incubadora San Fernando" required minLength={2} />
+          <Campo label="Incubadora o proveedor" ancho ayuda="Elige una de la lista o escribe otra.">
+            <input value={recepcion.proveedor} onChange={setR("proveedor")} list="incubadoras" placeholder="Ej. San Fernando" required minLength={2} maxLength={120} autoComplete="off" />
+            <datalist id="incubadoras">
+              {catalogo?.incubadoras.map((n) => <option key={n} value={n} />)}
+            </datalist>
           </Campo>
-          <Campo label="Fecha de llegada">
-            <input type="date" value={fechaIngreso} max={hoy()} onChange={(e) => setFechaIngreso(e.target.value)} required />
+          <Campo label="Fecha de llegada" ayuda="Hasta 70 días atrás.">
+            <input type="date" value={fechaIngreso} min={haceDias(70)} max={hoy()} onChange={(e) => setFechaIngreso(e.target.value)} required />
           </Campo>
           <Campo label="N.º de guía de remisión" ayuda="Opcional.">
             <input value={recepcion.guia} onChange={setR("guia")} placeholder="Ej. T001-004512" />
           </Campo>
         </Seccion>
-        <Seccion titulo="3. Recepción">
+        {(catalogo?.vacunas_incubadora.length ?? 0) > 0 && (
+          <Seccion titulo="3. Vacunas de la incubadora">
+            <div className="campo ancho">
+              <span className="campo-ayuda">
+                Marca las que ya traen los pollitos (figuran en la guía o en el certificado de la incubadora). Quedan registradas en
+                Sanidad como aplicadas el día de llegada, a la espera de la conformidad del veterinario.
+              </span>
+              <div className="opciones-check">
+                {catalogo?.vacunas_incubadora.map((v) => {
+                  const marcada = vacunasIncubadora.includes(v.nombre);
+                  return (
+                    <label key={v.nombre} className={marcada ? "opcion-check marcada" : "opcion-check"}>
+                      <input
+                        type="checkbox"
+                        checked={marcada}
+                        onChange={() => setVacunasIncubadora(marcada ? vacunasIncubadora.filter((x) => x !== v.nombre) : [...vacunasIncubadora, v.nombre])}
+                      />
+                      <span><b>{v.nombre}</b><small>{v.via}</small></span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </Seccion>
+        )}
+        <Seccion titulo="4. Recepción">
           <Campo label="Pollitos recibidos (según guía)">
-            <input type="number" min="1" value={recepcion.recibidos} onChange={setR("recibidos")} placeholder="Ej. 5100" required />
+            <input type="number" min="1" max="100000" value={recepcion.recibidos} onChange={setR("recibidos")} placeholder="Ej. 5100" required />
           </Campo>
           <Campo label="Muertos o descartados al llegar">
-            <input type="number" min="0" value={recepcion.descartes} onChange={setR("descartes")} required />
+            <input type="number" min="0" max={recibidos ? recibidos - 1 : undefined} value={recepcion.descartes} onChange={setR("descartes")} required />
           </Campo>
           <Campo label="Peso promedio al llegar (g)" ayuda="Lo normal es 38–45 g por pollito.">
             <input type="number" min="25" max="70" step="0.1" value={recepcion.pesoLlegada} onChange={setR("pesoLlegada")} required />
@@ -312,9 +373,21 @@ export default function Lotes() {
             </div>
           </div>
         </Seccion>
-        <Seccion titulo="4. Meta de la campaña">
-          <Campo label="Peso objetivo de venta (g)">
-            <input type="number" min="1000" max="5000" step="10" value={recepcion.pesoObjetivo} onChange={setR("pesoObjetivo")} required />
+        <Seccion titulo="5. Meta de la campaña">
+          <Campo
+            label="Peso objetivo de venta (g)"
+            ayuda={pesoEsperadoSaca ? (
+              <>
+                Un pollo {linea} de {recepcion.edadSaca} días debería pesar cerca de <b>{num(pesoEsperadoSaca)} g</b>.{" "}
+                {Number(recepcion.pesoObjetivo) !== pesoEsperadoSaca && (
+                  <button className="link-button" type="button" onClick={() => setRecepcion({ ...recepcion, pesoObjetivo: String(pesoEsperadoSaca) })}>
+                    Usar este peso
+                  </button>
+                )}
+              </>
+            ) : undefined}
+          >
+            <input type="number" min="1000" max="5000" step="1" value={recepcion.pesoObjetivo} onChange={setR("pesoObjetivo")} required />
           </Campo>
           <Campo label="Edad de saca prevista (días)">
             <input type="number" min="21" max="70" value={recepcion.edadSaca} onChange={setR("edadSaca")} required />

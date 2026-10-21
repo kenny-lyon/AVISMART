@@ -134,7 +134,9 @@ export default function Clientes() {
       <DrawerForm
         abierto={nuevo}
         titulo="Nuevo cliente"
-        descripcion={solicitudId ? "Datos tomados de la solicitud de contacto. Al crearlo, la solicitud queda como cliente." : "Crea la organización y la cuenta de su productor."}
+        descripcion={solicitudId
+          ? "Datos tomados de la solicitud de contacto. Si quien escribió no es el dueño de la granja, cambia el productor por el correcto: la solicitud quedará enlazada igual."
+          : "Crea la organización y la cuenta de su productor."}
         onCerrar={() => setNuevo(false)}
         onGuardar={crear}
         guardando={guardando}
@@ -154,9 +156,6 @@ export default function Clientes() {
             <input type="email" value={form.productorEmail} onChange={(e) => setForm({ ...form, productorEmail: e.target.value })} required />
           </Campo>
         </Seccion>
-        {solicitudId && (
-          <button className="link-button" type="button" onClick={() => setSolicitudId(null)}>No vincular a la solicitud</button>
-        )}
       </DrawerForm>
 
       <DrawerCredencial

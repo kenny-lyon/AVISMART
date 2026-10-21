@@ -68,7 +68,7 @@ def seed(db: Session) -> None:
     ingreso = date.today() - timedelta(days=18)
     lote = Lote(
         galpon_id=galpon.id,
-        linea="Ross",
+        linea="Ross 308",
         fecha_ingreso=ingreso,
         poblacion_inicial=5000,
         peso_objetivo_g=2800,

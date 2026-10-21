@@ -8,7 +8,7 @@ import { useLote } from "../lote";
 
 /** Qué cuentas crea y gestiona cada rol del cliente (lo mismo que valida el backend). */
 const PERSONAL: Partial<Record<Rol, { crea: Rol[]; gestiona: Rol[] }>> = {
-  ADMIN: { crea: ["PRODUCTOR", "OPERARIO", "VETERINARIO"], gestiona: ["ADMIN", "PRODUCTOR", "OPERARIO", "VETERINARIO"] },
+  ADMIN: { crea: ["OPERARIO", "VETERINARIO"], gestiona: ["ADMIN", "PRODUCTOR", "OPERARIO", "VETERINARIO"] },
   PRODUCTOR: { crea: ["OPERARIO", "VETERINARIO"], gestiona: ["OPERARIO", "VETERINARIO"] },
 };
 

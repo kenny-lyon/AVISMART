@@ -62,7 +62,7 @@ export default function TelegramCliente() {
       acciones={<Estado valor={estado.vinculado ? "ACTIVO" : "INACTIVO"} texto={estado.vinculado ? "Vinculado" : "Sin vincular"} />}
     >
       {!estado.bot_configurado ? (
-        <div className="aviso info"><Icon name="aviso" /><span>El bot de Telegram de AviSmart todavía no está configurado. Avisa al equipo de AviSmart.</span></div>
+        <div className="aviso info"><Icon name="aviso" /><span>Las alertas por Telegram aún no están activas para tu cuenta. Escríbenos desde Soporte y las activamos.</span></div>
       ) : estado.vinculado ? (
         <>
           <dl className="ficha">

@@ -29,6 +29,9 @@ const PATHS = {
   editar: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
   llave: "M15 7a4 4 0 1 1-3.9 5H8v3H5v-3H3v-3h8.1A4 4 0 0 1 15 7zM16 11h.01",
   pausa: "M8 5v14M16 5v14",
+  alimento: "M5 9h14l-1.5 11h-11zM8 9V6a4 4 0 0 1 8 0v3M9 14h6",
+  ubicacion: "M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  papelera: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6",
   flecha: "M5 12h14M13 6l6 6-6 6",
 } as const;
 
@@ -116,8 +119,8 @@ export function Tabs({ items, valor, onCambio }: { items: Pestana[]; valor: stri
 
 const TONOS: Record<string, string> = {
   ACTIVO: "ok", ACTIVA: "ok", VALIDADA: "ok", ATENDIDA: "ok", CONTACTADA: "ok", CLIENTE: "acento", ENVIADA: "ok",
-  PENDIENTE: "alerta", NUEVA: "alerta", VISTA: "info", OBSERVADA: "riesgo", VENCIDA: "riesgo", SOSPECHOSA: "riesgo", PROGRAMADA: "info", APLICADA: "acento", SUSPENDIDA: "riesgo",
-  CERRADO: "neutro", DESCARTADA: "neutro", INACTIVO: "neutro", FALLIDA: "riesgo",
+  PENDIENTE: "alerta", INDICADO: "alerta", NUEVA: "alerta", VISTA: "info", OBSERVADA: "riesgo", VENCIDA: "riesgo", SOSPECHOSA: "riesgo", PROGRAMADA: "info", APLICADA: "acento", SUSPENDIDA: "riesgo",
+  CERRADO: "neutro", DESCARTADA: "neutro", BAJA: "neutro", INACTIVO: "neutro", FALLIDA: "riesgo",
   SALUD: "riesgo", RECORDATORIO: "alerta", AMBIENTE: "info", CRECIMIENTO: "acento",
 };
 

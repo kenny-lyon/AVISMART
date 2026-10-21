@@ -1,4 +1,5 @@
 import hashlib
+import re
 import os
 import secrets
 from datetime import date, datetime, timedelta
@@ -12,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
-from . import antispam, catalogo, correo
+from . import antispam, baja_cliente, catalogo, correo
 from .db import Base, SessionLocal, engine, ensure_schema, get_db
 from .logic import (
     carencias_activas,
@@ -23,8 +24,13 @@ from .logic import (
     evaluar_clima,
     evaluar_registro,
     evaluar_vacunas_vencidas,
+    fase_del_dia,
+    plan_alimento,
     fechas_tratamiento,
     indicadores,
+    CURVAS,
+    LINEAS,
+    normalizar_linea,
     peso_esperado,
     umbral_mortalidad,
 )
@@ -32,8 +38,10 @@ from .models import (
     IntentoLogin,
     IntentoRecuperacion,
     Alerta,
+    CambioAlimento,
     CierreLote,
     Configuracion,
+    FaseAlimento,
     Galpon,
     Granja,
     LecturaAmbiental,
@@ -56,6 +64,7 @@ from .security import (
     organizacion_de,
     organizacion_suspendida,
     require,
+    UsuarioSoporte,
     verify_password,
 )
 from .seed import asegurar_tratamiento_demo, seed
@@ -157,6 +166,8 @@ class LoteIn(BaseModel):
     peso_objetivo_g: int = Field(default=2800, ge=1000, le=5000)
     edad_saca_dias: int = Field(default=42, ge=21, le=70)
     observaciones: str = Field(default="", max_length=1000)
+    # Vacunas con las que llegan los pollitos (ya aplicadas en la incubadora).
+    vacunas_incubadora: list[str] = Field(default_factory=list, max_length=10)
 
 
 class RegistroIn(BaseModel):
@@ -165,6 +176,8 @@ class RegistroIn(BaseModel):
     alimento_kg: float = Field(ge=0, le=50_000)
     agua_l: float = Field(ge=0, le=100_000)
     peso_muestra_g: float = Field(ge=25, le=6_000)
+    # Fase de alimento que se dio; si no se indica, la del plan para ese día.
+    fase_alimento: str = Field(default="", max_length=30)
 
 
 class ClimaIn(BaseModel):
@@ -251,6 +264,7 @@ class UsuarioEstadoIn(BaseModel):
 class ContactoIn(BaseModel):
     nombre: str = Field(min_length=3, max_length=120)
     email: str = Field(min_length=5, max_length=160)
+    telefono: str = Field(default="", max_length=20)
     empresa: str = Field(default="", max_length=160)
     pais: str = Field(min_length=2, max_length=80)
     aves: str = Field(default="", max_length=60)
@@ -271,12 +285,58 @@ class SolicitudEstadoIn(BaseModel):
 
 class GranjaIn(BaseModel):
     nombre: str = Field(min_length=3, max_length=160)
-    ubicacion: str = Field(min_length=2, max_length=160)
+    ubicacion: str = Field(default="", max_length=160)
+    departamento: str = Field(default="", max_length=60)
+    provincia: str = Field(default="", max_length=80)
+    distrito: str = Field(default="", max_length=80)
+    latitud: float | None = None
+    longitud: float | None = None
+
+
+def _ubicar_granja(granja: Granja, body: GranjaIn) -> None:
+    """Ubigeo + punto del mapa. La ubicación legible se arma con el distrito si no se escribió otra."""
+    departamento, provincia, distrito = body.departamento.strip(), body.provincia.strip(), body.distrito.strip()
+    ubigeo = [distrito, provincia, departamento]
+    if any(ubigeo) and not all(ubigeo):
+        raise HTTPException(status_code=400, detail="Elige departamento, provincia y distrito")
+    ubicacion = body.ubicacion.strip()
+    if not ubicacion and all(ubigeo):
+        # "Juliaca, San Román, Puno" (sin repetir cuando el distrito se llama como su provincia).
+        partes = [distrito] + [p for p in (provincia, departamento) if p != distrito]
+        ubicacion = ", ".join(dict.fromkeys(partes))
+    if len(ubicacion) < 2:
+        raise HTTPException(status_code=400, detail="Indica dónde está la granja avícola: elige el distrito o escribe la ubicación")
+    if (body.latitud is None) != (body.longitud is None):
+        raise HTTPException(status_code=400, detail="El punto del mapa está incompleto")
+    if body.latitud is not None and not (-18.6 <= body.latitud <= 0.1 and -81.5 <= body.longitud <= -68.5):
+        raise HTTPException(status_code=400, detail="El punto del mapa debe estar dentro del Perú")
+    granja.ubicacion = ubicacion
+    granja.departamento, granja.provincia, granja.distrito = departamento or None, provincia or None, distrito or None
+    granja.latitud = round(body.latitud, 6) if body.latitud is not None else None
+    granja.longitud = round(body.longitud, 6) if body.longitud is not None else None
 
 
 class GalponIn(BaseModel):
-    nombre: str = Field(min_length=1, max_length=120)
-    capacidad: int = Field(gt=0, le=200_000)
+    # El nombre lo pone el sistema («Galpón 01»…); se acepta por compatibilidad pero no se usa.
+    nombre: str = Field(default="", max_length=120)
+    capacidad: int = Field(gt=0, le=100_000)
+
+
+MAX_GALPONES = 10
+
+
+def _numero_galpon(nombre: str) -> int | None:
+    coincide = re.fullmatch(r"galp[oó]n\s*0*(\d{1,2})", nombre.strip().lower())
+    return int(coincide.group(1)) if coincide else None
+
+
+def _siguiente_galpon(granja: Granja) -> str:
+    """Primer número libre de la granja: Galpón 01, Galpón 02… hasta Galpón 10."""
+    if len(granja.galpones) >= MAX_GALPONES:
+        raise HTTPException(status_code=400, detail=f"Una granja avícola puede tener hasta {MAX_GALPONES} galpones")
+    usados = {_numero_galpon(g.nombre) for g in granja.galpones}
+    numero = next(n for n in range(1, MAX_GALPONES + 1) if n not in usados)
+    return f"Galpón {numero:02d}"
 
 
 class OrganizacionIn(BaseModel):
@@ -297,7 +357,7 @@ cliente = require(*ROLES_CLIENTE)
 # Qué cuentas puede crear y gestionar cada rol. ADMIN solo existe en organizaciones antiguas (Demostración).
 CREA = {
     "PLATAFORMA": ("PLATAFORMA",),
-    "ADMIN": ROLES_PERSONAL,
+    "ADMIN": ("OPERARIO", "VETERINARIO"),
     "PRODUCTOR": ("OPERARIO", "VETERINARIO"),
 }
 GESTIONA = {
@@ -306,7 +366,8 @@ GESTIONA = {
     "PRODUCTOR": ("OPERARIO", "VETERINARIO"),
 }
 # Desde la ficha de un cliente, la plataforma gestiona a todo su personal.
-PLATAFORMA_CREA_EN_CLIENTE = ROLES_PERSONAL
+# Un cliente tiene un solo productor (el principal, creado con el cliente): solo se agrega personal.
+PLATAFORMA_CREA_EN_CLIENTE = ("OPERARIO", "VETERINARIO")
 PLATAFORMA_GESTIONA_EN_CLIENTE = ROLES_CLIENTE
 # Roles de los que siempre debe quedar al menos una cuenta activa en su ámbito.
 ROLES_RESPONSABLES = ("PLATAFORMA", "ADMIN", "PRODUCTOR")
@@ -320,6 +381,7 @@ def _usuario(u: Usuario) -> dict:
         "rol": u.rol,
         "activo": bool(u.activo),
         "debe_cambiar_clave": bool(u.debe_cambiar_clave),
+        "soporte": getattr(u, "soporte", False),
         "organizacion": (
             {"id": u.organizacion.id, "nombre": u.organizacion.nombre} if u.organizacion else None
         ),
@@ -335,8 +397,26 @@ def _granja(g: Granja) -> dict:
         "id": g.id,
         "nombre": g.nombre,
         "ubicacion": g.ubicacion,
+        "departamento": g.departamento,
+        "provincia": g.provincia,
+        "distrito": g.distrito,
+        "latitud": g.latitud,
+        "longitud": g.longitud,
         "galpones": [_galpon(x) for x in sorted(g.galpones, key=lambda x: x.id)],
     }
+
+
+def _origen(db: Session, o: Organizacion) -> dict | None:
+    """Quién escribió la solicitud de la que salió el cliente, si no es uno de sus productores."""
+    if not o.solicitud_id:
+        return None
+    solicitud = db.get(SolicitudContacto, o.solicitud_id)
+    if solicitud is None:
+        return None
+    productores = {u.email for u in o.usuarios if u.rol in ("PRODUCTOR", "ADMIN")}
+    if solicitud.email in productores:
+        return None
+    return {"nombre": solicitud.nombre, "email": solicitud.email, "fecha": solicitud.creada_en.isoformat(timespec="minutes")}
 
 
 def _organizacion(db: Session, o: Organizacion) -> dict:
@@ -352,6 +432,7 @@ def _organizacion(db: Session, o: Organizacion) -> dict:
         "estado": o.estado,
         "creada_en": o.creada_en.isoformat(timespec="minutes") if o.creada_en else None,
         "solicitud_id": o.solicitud_id,
+        "origen": _origen(db, o),
         "usuarios_activos": sum(1 for u in o.usuarios if u.activo),
         "granjas": len(o.granjas),
         "lotes_activos": lotes_activos,
@@ -363,11 +444,34 @@ def _organizacion(db: Session, o: Organizacion) -> dict:
     }
 
 
-def _solicitud(s: SolicitudContacto) -> dict:
+def _cuenta_existente(db: Session, email: str) -> dict | None:
+    """Si el correo ya tiene cuenta en AviSmart, a quién pertenece (para no crear un cliente duplicado)."""
+    usuario = db.query(Usuario).filter(Usuario.email == email.strip().lower()).first()
+    if usuario is None:
+        return None
+    org = usuario.organizacion
     return {
+        "rol": usuario.rol,
+        "activo": bool(usuario.activo),
+        "organizacion": {"id": org.id, "nombre": org.nombre, "estado": org.estado} if org else None,
+    }
+
+
+def _texto_cuenta_existente(cuenta: dict) -> str:
+    org = cuenta["organizacion"]
+    if org is None:
+        return "Ya existe una cuenta de la plataforma con ese correo"
+    suspendido = " (suspendido)" if org["estado"] == "SUSPENDIDA" else ""
+    return f"Ese correo ya tiene una cuenta en el cliente «{org['nombre']}»{suspendido}. Usa esa cuenta en lugar de crear otra"
+
+
+def _solicitud(s: SolicitudContacto, db: Session | None = None) -> dict:
+    return {
+        "cuenta_existente": _cuenta_existente(db, s.email) if db is not None else None,
         "id": s.id,
         "nombre": s.nombre,
         "email": s.email,
+        "telefono": s.telefono,
         "empresa": s.empresa,
         "pais": s.pais,
         "aves": s.aves,
@@ -442,10 +546,12 @@ def _tratamiento(t: Tratamiento) -> dict:
         "aves_tratadas": t.aves_tratadas,
         "ultima_dosis": ultima.isoformat(),
         "libre_faena": libre.isoformat(),
-        "en_carencia": hoy < libre,  # los observados también cuentan: el medicamento ya se aplicó
-        "dias_restantes": max((libre - hoy).days, 0),
+        # Los observados también cuentan (el medicamento ya se aplicó); los indicados sin iniciar, no.
+        "en_carencia": t.estado != "INDICADO" and hoy < libre,
+        "dias_restantes": max((libre - hoy).days, 0) if t.estado != "INDICADO" else 0,
         "estado": t.estado,
         "diagnostico": t.diagnostico,
+        "indicado": t.indicado_por is not None,
     }
 
 
@@ -522,6 +628,18 @@ def contacto_config():
     return {"turnstile_sitekey": antispam.turnstile_sitekey()}
 
 
+def _telefono_peru(valor: str) -> str | None:
+    """Teléfono opcional: celular peruano de 9 dígitos que empieza con 9 (acepta +51, espacios y guiones)."""
+    digitos = "".join(c for c in valor if c.isdigit())
+    if not digitos:
+        return None
+    if len(digitos) == 11 and digitos.startswith("51"):
+        digitos = digitos[2:]
+    if len(digitos) != 9 or not digitos.startswith("9"):
+        raise HTTPException(status_code=400, detail="El celular debe tener 9 dígitos y empezar con 9 (por ejemplo, 987 654 321)")
+    return digitos
+
+
 @app.post("/api/contacto", status_code=201)
 def registrar_contacto(body: ContactoIn, request: Request, db: Session = Depends(get_db)):
     ip = _ip_cliente(request)
@@ -537,6 +655,7 @@ def registrar_contacto(body: ContactoIn, request: Request, db: Session = Depends
         raise HTTPException(status_code=400, detail=problema)
     if body.motivo not in ("DEMO", "COMERCIAL", "SOPORTE", "ALIANZA"):
         raise HTTPException(status_code=400, detail="El motivo no es válido")
+    telefono = _telefono_peru(body.telefono)
     # 3. Límites por IP, por correo y globales.
     limite = antispam.limite_superado(db, ip, email)
     if limite:
@@ -548,6 +667,7 @@ def registrar_contacto(body: ContactoIn, request: Request, db: Session = Depends
     solicitud = SolicitudContacto(
         nombre=body.nombre.strip(),
         email=email,
+        telefono=telefono,
         empresa=body.empresa.strip(),
         pais=body.pais.strip(),
         aves=body.aves.strip(),
@@ -639,7 +759,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     db.query(IntentoLogin).filter(IntentoLogin.email == email).delete(synchronize_session=False)
     db.commit()
     if organizacion_suspendida(usuario):
-        raise HTTPException(status_code=401, detail="El acceso de su organización está suspendido")
+        raise HTTPException(status_code=401, detail="El acceso de tu empresa está suspendido. Comunícate con AviSmart")
     return {"token": create_token(usuario), "usuario": _usuario(usuario)}
 
 
@@ -654,6 +774,8 @@ def cambiar_clave(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
+    if getattr(usuario, "soporte", False):
+        raise HTTPException(status_code=403, detail="En modo soporte no se puede cambiar la clave. Sal del modo soporte primero")
     if not verify_password(body.clave_actual, usuario.password_hash):
         raise HTTPException(status_code=400, detail="La clave actual no es correcta")
     if body.clave_actual == body.clave_nueva:
@@ -708,7 +830,7 @@ def restablecer_clave_con_enlace(body: RestablecerClaveIn, db: Session = Depends
     if usuario.reset_expira is None or usuario.reset_expira < datetime.now():
         raise HTTPException(status_code=400, detail="El enlace venció. Pide uno nuevo")
     if not usuario.activo or organizacion_suspendida(usuario):
-        raise HTTPException(status_code=400, detail="Esta cuenta no está habilitada. Comunícate con tu administrador")
+        raise HTTPException(status_code=400, detail="Esta cuenta no está habilitada. Comunícate con el productor de tu granja o con AviSmart")
     problema = problema_con_clave_nueva(body.clave_nueva)
     if problema:
         raise HTTPException(status_code=400, detail=problema)
@@ -773,7 +895,8 @@ def listar_granjas(db: Session = Depends(get_db), usuario: Usuario = Depends(cli
 
 @app.post("/api/granjas", status_code=201)
 def crear_granja(body: GranjaIn, db: Session = Depends(get_db), usuario: Usuario = Depends(require("ADMIN", "PRODUCTOR"))):
-    granja = Granja(nombre=body.nombre.strip(), ubicacion=body.ubicacion.strip(), organizacion_id=organizacion_de(usuario))
+    granja = Granja(nombre=body.nombre.strip(), organizacion_id=organizacion_de(usuario))
+    _ubicar_granja(granja, body)
     db.add(granja)
     db.commit()
     db.refresh(granja)
@@ -789,7 +912,7 @@ def editar_granja(
 ):
     granja = _cargar_granja(db, granja_id, usuario)
     granja.nombre = body.nombre.strip()
-    granja.ubicacion = body.ubicacion.strip()
+    _ubicar_granja(granja, body)
     db.commit()
     return _granja(granja)
 
@@ -802,9 +925,7 @@ def crear_galpon(
     usuario: Usuario = Depends(require("ADMIN", "PRODUCTOR")),
 ):
     granja = _cargar_granja(db, granja_id, usuario)
-    nombre = body.nombre.strip()
-    if any(g.nombre.lower() == nombre.lower() for g in granja.galpones):
-        raise HTTPException(status_code=400, detail="Ya existe un galpón con ese nombre en la granja avícola")
+    nombre = _siguiente_galpon(granja)
     galpon = Galpon(
         granja_id=granja.id,
         nombre=nombre,
@@ -827,13 +948,10 @@ def editar_galpon(
     usuario: Usuario = Depends(require("ADMIN", "PRODUCTOR")),
 ):
     galpon = _cargar_galpon(db, galpon_id, usuario)
-    nombre = body.nombre.strip()
-    if any(g.id != galpon.id and g.nombre.lower() == nombre.lower() for g in galpon.granja.galpones):
-        raise HTTPException(status_code=400, detail="Ya existe un galpón con ese nombre en la granja avícola")
+    # El número del galpón no cambia: solo se edita la capacidad.
     mayor = max((l.poblacion_inicial for l in galpon.lotes if l.estado == "ACTIVO"), default=0)
     if body.capacidad < mayor:
         raise HTTPException(status_code=400, detail=f"Hay un lote activo de {mayor} aves; la capacidad no puede ser menor")
-    galpon.nombre = nombre
     galpon.capacidad = body.capacidad
     db.commit()
     return _galpon(galpon)
@@ -845,12 +963,18 @@ def crear_lote(
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(require("PRODUCTOR", "ADMIN")),
 ):
-    if body.linea not in ("Ross", "Cobb"):
-        raise HTTPException(status_code=400, detail="La línea tiene que ser Ross o Cobb")
+    linea = normalizar_linea(body.linea)
+    if linea not in LINEAS:
+        raise HTTPException(status_code=400, detail="La línea genética tiene que ser " + ", ".join(LINEAS[:-1]) + " o " + LINEAS[-1])
     if body.sexo not in ("MIXTO", "MACHOS", "HEMBRAS"):
         raise HTTPException(status_code=400, detail="El sexo tiene que ser mixto, machos o hembras")
     if body.fecha_ingreso > date.today():
         raise HTTPException(status_code=400, detail="La fecha de ingreso no puede ser futura")
+    de_incubadora = {v["nombre"] for v in catalogo.VACUNAS_INCUBADORA}
+    if any(v not in de_incubadora for v in body.vacunas_incubadora):
+        raise HTTPException(status_code=400, detail="Marca solo vacunas de la lista de la incubadora")
+    if body.fecha_ingreso < date.today() - timedelta(days=70):
+        raise HTTPException(status_code=400, detail="La fecha de llegada es de hace más de 70 días: un lote de engorde ya habría salido a faena")
     if body.descarte_llegada >= body.cantidad_recibida:
         raise HTTPException(status_code=400, detail="Los descartados deben ser menos que los pollitos recibidos")
     galpon = _cargar_galpon(db, body.galpon_id, usuario)
@@ -865,7 +989,7 @@ def crear_lote(
         raise HTTPException(status_code=400, detail=f"Los pollitos superan la capacidad de {galpon.nombre} ({galpon.capacidad} aves)")
     lote = Lote(
         galpon_id=body.galpon_id,
-        linea=body.linea,
+        linea=linea,
         fecha_ingreso=body.fecha_ingreso,
         poblacion_inicial=poblacion,
         peso_objetivo_g=body.peso_objetivo_g,
@@ -881,6 +1005,22 @@ def crear_lote(
         estado="ACTIVO",
     )
     db.add(lote)
+    db.flush()
+    plan_alimento(db, lote)
+    # Ya vienen aplicadas: quedan «aplicadas · por revisar» para la conformidad del veterinario.
+    for nombre in dict.fromkeys(body.vacunas_incubadora):
+        db.add(
+            Vacunacion(
+                lote_id=lote.id,
+                nombre=nombre,
+                fecha_programada=body.fecha_ingreso,
+                estado="APLICADA",
+                observacion="",
+                fecha_aplicacion=body.fecha_ingreso,
+                aplicada_por=usuario.id,
+                nota_aplicacion=f"Aplicada en la incubadora ({lote.proveedor}).",
+            )
+        )
     db.commit()
     db.refresh(lote)
     lote = _cargar_lote(db, lote.id, usuario)
@@ -927,6 +1067,12 @@ def panel(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depend
     data["lote"] = _lote(lote)
     data["umbral_mortalidad"] = umbral_mortalidad(db, organizacion_de(usuario))
     data["carencias"] = carencias_activas(db, lote.id)
+    fase = fase_del_dia(plan_alimento(db, lote), dia_vida(lote))
+    data["alimento_hoy"] = _fase(fase) if fase else None
+    data["tratamientos_indicados"] = (
+        db.query(Tratamiento).filter(Tratamiento.lote_id == lote.id, Tratamiento.estado == "INDICADO").count()
+    )
+    db.commit()
     data["vacunas_vencidas"] = [
         {
             "id": v.id,
@@ -988,6 +1134,18 @@ def crear_registro(
             detail=f"Un peso promedio de {body.peso_muestra_g:g} g no es posible para un pollo de {edad} días (la curva {lote.linea} espera cerca de {esperado:.0f} g). Revisa el dato",
         )
 
+    fase = body.fase_alimento.strip()
+    if fase and fase not in catalogo.NOMBRES_FASE:
+        raise HTTPException(status_code=400, detail="El tipo de alimento no es válido")
+    if not fase:
+        # Solo lectura: sin plan guardado se usa el plan base del catálogo.
+        guardadas = db.query(FaseAlimento).filter(FaseAlimento.lote_id == lote.id).order_by(FaseAlimento.dia_desde).all()
+        if guardadas:
+            planificada = fase_del_dia(guardadas, edad)
+            fase = planificada.nombre if planificada else None
+        else:
+            fase = next((f["nombre"] for f in catalogo.FASES_ALIMENTO if f["dia_desde"] <= edad <= f["dia_hasta"]), None)
+
     registro = RegistroDiario(
         lote_id=lote.id,
         usuario_id=usuario.id,
@@ -996,6 +1154,7 @@ def crear_registro(
         alimento_kg=body.alimento_kg,
         agua_l=body.agua_l,
         peso_muestra_g=body.peso_muestra_g,
+        fase_alimento=fase,
     )
     db.add(registro)
     try:
@@ -1057,6 +1216,16 @@ def sanidad(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depe
     return {"vacunas": [_vacuna(v) for v in vacunas], "tratamientos": [_tratamiento(t) for t in tratamientos]}
 
 
+@app.get("/api/catalogo/lotes")
+def catalogo_lotes(_: Usuario = Depends(cliente)):
+    """Líneas genéticas con su curva de peso y las incubadoras sugeridas, para abrir un lote."""
+    return {
+        "lineas": [{"nombre": nombre, "curva": [list(p) for p in puntos]} for nombre, puntos in CURVAS.items()],
+        "incubadoras": catalogo.INCUBADORAS,
+        "vacunas_incubadora": catalogo.VACUNAS_INCUBADORA,
+    }
+
+
 @app.get("/api/catalogo/sanidad")
 def catalogo_sanidad(_: Usuario = Depends(cliente)):
     return {"vacunas": catalogo.VACUNAS, "medicamentos": catalogo.MEDICAMENTOS}
@@ -1067,8 +1236,9 @@ def crear_vacuna(
     lote_id: int,
     body: VacunaIn,
     db: Session = Depends(get_db),
-    usuario: Usuario = Depends(require("PRODUCTOR", "OPERARIO")),
+    usuario: Usuario = Depends(require("PRODUCTOR", "OPERARIO", "VETERINARIO")),
 ):
+    """El personal propone la fecha (la aprueba el veterinario); si la programa el veterinario, ya queda aprobada."""
     lote = _cargar_lote(db, lote_id, usuario)
     if lote.estado != "ACTIVO":
         raise HTTPException(status_code=400, detail="El lote ya está cerrado")
@@ -1080,8 +1250,9 @@ def crear_vacuna(
         lote_id=lote.id,
         nombre=body.nombre.strip(),
         fecha_programada=body.fecha_programada,
-        estado="PENDIENTE",
-        observacion="",
+        estado="PROGRAMADA" if usuario.rol == "VETERINARIO" else "PENDIENTE",
+        observacion="Programada por el veterinario." if usuario.rol == "VETERINARIO" else "",
+        aprobada_por=usuario.id if usuario.rol == "VETERINARIO" else None,
         validado_por=None,
     )
     db.add(vacuna)
@@ -1103,15 +1274,7 @@ def crear_tratamiento(
     lote = _cargar_lote(db, lote_id, usuario)
     if lote.estado != "ACTIVO":
         raise HTTPException(status_code=400, detail="El lote ya está cerrado")
-    producto = catalogo.medicamento(body.medicamento.strip())
-    if producto is None:
-        raise HTTPException(status_code=400, detail="Elige un medicamento del catálogo")
-    if body.dosis.strip() not in producto["dosis"]:
-        raise HTTPException(status_code=400, detail="La dosis no corresponde a ese medicamento")
-    if body.via not in producto["vias"]:
-        raise HTTPException(status_code=400, detail="La vía no corresponde a ese medicamento")
-    if body.fecha_inicio < lote.fecha_ingreso:
-        raise HTTPException(status_code=400, detail="El tratamiento no puede empezar antes del ingreso del lote")
+    _validar_medicamento(body, lote)
     if body.fecha_inicio > date.today():
         raise HTTPException(status_code=400, detail="Registra el tratamiento cuando empiece a aplicarse: la fecha de inicio no puede ser futura")
     vivas = indicadores(db, lote)["aves_vivas"]
@@ -1134,6 +1297,189 @@ def crear_tratamiento(
     db.commit()
     db.refresh(tratamiento)
     return _tratamiento(tratamiento)
+
+
+class IndicarTratamientoIn(TratamientoIn):
+    diagnostico: str = Field(min_length=5, max_length=500)
+
+
+class IniciarTratamientoIn(BaseModel):
+    fecha_inicio: date
+
+
+def _validar_medicamento(body: TratamientoIn, lote: Lote) -> dict:
+    producto = catalogo.medicamento(body.medicamento.strip())
+    if producto is None:
+        raise HTTPException(status_code=400, detail="Elige un medicamento del catálogo")
+    if body.dosis.strip() not in producto["dosis"]:
+        raise HTTPException(status_code=400, detail="La dosis no corresponde a ese medicamento")
+    if body.via not in producto["vias"]:
+        raise HTTPException(status_code=400, detail="La vía no corresponde a ese medicamento")
+    if body.fecha_inicio < lote.fecha_ingreso:
+        raise HTTPException(status_code=400, detail="El tratamiento no puede empezar antes del ingreso del lote")
+    return producto
+
+
+@app.post("/api/lotes/{lote_id}/tratamientos/indicar")
+def indicar_tratamiento(
+    lote_id: int,
+    body: IndicarTratamientoIn,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require("VETERINARIO")),
+):
+    """Receta del veterinario: el productor o el operario la inician y la suministran."""
+    lote = _cargar_lote(db, lote_id, usuario)
+    if lote.estado != "ACTIVO":
+        raise HTTPException(status_code=400, detail="El lote ya está cerrado")
+    _validar_medicamento(body, lote)
+    if not date.today() <= body.fecha_inicio <= date.today() + timedelta(days=7):
+        raise HTTPException(status_code=400, detail="La fecha prevista de inicio debe ser de hoy a 7 días")
+    vivas = indicadores(db, lote)["aves_vivas"]
+    if body.aves_tratadas and body.aves_tratadas > vivas:
+        raise HTTPException(status_code=400, detail=f"Las aves tratadas ({body.aves_tratadas}) superan las aves vivas del lote ({vivas})")
+    tratamiento = Tratamiento(
+        lote_id=lote.id,
+        medicamento=body.medicamento.strip(),
+        dosis=body.dosis.strip(),
+        via=body.via,
+        fecha_inicio=body.fecha_inicio,
+        dias_tratamiento=body.dias_tratamiento,
+        dias_carencia=body.dias_carencia,
+        aves_tratadas=body.aves_tratadas,
+        estado="INDICADO",
+        diagnostico=body.diagnostico.strip(),
+        validado_por=usuario.id,
+        indicado_por=usuario.id,
+    )
+    db.add(tratamiento)
+    db.flush()
+    aves = f"{body.aves_tratadas} aves" if body.aves_tratadas else "todo el lote"
+    aviso = Alerta(
+        lote_id=lote.id,
+        tipo="RECORDATORIO",
+        mensaje=(
+            f"El veterinario indicó {tratamiento.medicamento} ({tratamiento.dosis}, {tratamiento.via.lower()}) por "
+            f"{tratamiento.dias_tratamiento} días para {aves}, desde el {body.fecha_inicio.strftime('%d/%m/%Y')}. "
+            "Inícialo en Vacunas y tratamientos."
+        ),
+        estado="NUEVA",
+        requiere_veterinario=0,
+        observacion="",
+        creada_en=datetime.now(),
+        tratamiento_id=tratamiento.id,
+    )
+    db.add(aviso)
+    db.commit()
+    notificar_alertas(db, [aviso])
+    return _tratamiento(tratamiento)
+
+
+@app.post("/api/tratamientos/{tratamiento_id}/iniciar")
+def iniciar_tratamiento(
+    tratamiento_id: int,
+    body: IniciarTratamientoIn,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require("PRODUCTOR", "OPERARIO")),
+):
+    """El personal registra que empezó a dar el tratamiento indicado: desde ahí corre la carencia."""
+    tratamiento = db.get(Tratamiento, tratamiento_id)
+    if tratamiento is None:
+        raise HTTPException(status_code=404, detail="Tratamiento no encontrado")
+    lote = _cargar_lote(db, tratamiento.lote_id, usuario)
+    if tratamiento.estado != "INDICADO":
+        raise HTTPException(status_code=400, detail="Este tratamiento ya se inició")
+    if body.fecha_inicio > date.today() or body.fecha_inicio < lote.fecha_ingreso:
+        raise HTTPException(status_code=400, detail="La fecha de inicio debe ser de hoy o anterior, dentro del lote")
+    tratamiento.fecha_inicio = body.fecha_inicio
+    tratamiento.estado = "VALIDADA"  # ya cuenta con la indicación del veterinario
+    tratamiento.iniciado_por = usuario.id
+    for aviso in db.query(Alerta).filter(Alerta.tratamiento_id == tratamiento.id, Alerta.estado != "ATENDIDA"):
+        aviso.estado = "ATENDIDA"
+        aviso.observacion = f"Tratamiento iniciado el {body.fecha_inicio.strftime('%d/%m/%Y')}."
+        aviso.atendida_por = usuario.id
+    db.commit()
+    return _tratamiento(tratamiento)
+
+
+def _fase(f: FaseAlimento) -> dict:
+    return {"nombre": f.nombre, "dia_desde": f.dia_desde, "dia_hasta": f.dia_hasta, "presentacion": f.presentacion, "producto": f.producto}
+
+
+def _alimentacion(db: Session, lote: Lote) -> dict:
+    fases = plan_alimento(db, lote)
+    actual = fase_del_dia(fases, dia_vida(lote))
+    cambios = db.query(CambioAlimento).filter(CambioAlimento.lote_id == lote.id).order_by(CambioAlimento.fecha.desc()).all()
+    ids = {c.usuario_id for c in cambios if c.usuario_id} or {0}
+    nombres = {u.id: u.nombre for u in db.query(Usuario).filter(Usuario.id.in_(ids))}
+    return {
+        "dia_vida": dia_vida(lote),
+        "fases": [_fase(f) for f in fases],
+        "fase_actual": actual.nombre if actual else None,
+        "cambios": [
+            {"fecha": c.fecha.isoformat(timespec="minutes"), "usuario": nombres.get(c.usuario_id, "—"), "motivo": c.motivo, "detalle": c.detalle}
+            for c in cambios
+        ],
+        "catalogo": {"fases": catalogo.FASES_ALIMENTO, "nombres": catalogo.NOMBRES_FASE, "presentaciones": catalogo.PRESENTACIONES},
+    }
+
+
+@app.get("/api/lotes/{lote_id}/alimentacion")
+def ver_alimentacion(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(cliente)):
+    lote = _cargar_lote(db, lote_id, usuario)
+    datos = _alimentacion(db, lote)
+    db.commit()  # guarda el plan base si el lote aún no lo tenía
+    return datos
+
+
+class FaseIn(BaseModel):
+    nombre: str
+    dia_desde: int = Field(ge=0, le=70)
+    dia_hasta: int = Field(ge=0, le=70)
+    presentacion: str = Field(default="", max_length=40)
+    producto: str = Field(default="", max_length=120)
+
+
+class PlanAlimentoIn(BaseModel):
+    fases: list[FaseIn] = Field(min_length=1, max_length=6)
+    motivo: str = Field(min_length=5, max_length=500)
+
+
+@app.put("/api/lotes/{lote_id}/alimentacion")
+def variar_alimentacion(
+    lote_id: int,
+    body: PlanAlimentoIn,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require("VETERINARIO")),
+):
+    """El veterinario varía el plan: fases, días o producto. Queda en el historial con su motivo."""
+    lote = _cargar_lote(db, lote_id, usuario)
+    if lote.estado != "ACTIVO":
+        raise HTTPException(status_code=400, detail="El lote ya está cerrado")
+    fases = sorted(body.fases, key=lambda f: f.dia_desde)
+    esperado = 0
+    for fase in fases:
+        if fase.nombre not in catalogo.NOMBRES_FASE:
+            raise HTTPException(status_code=400, detail=f"«{fase.nombre}» no es una fase de alimento válida")
+        if fase.dia_desde != esperado or fase.dia_hasta < fase.dia_desde:
+            raise HTTPException(status_code=400, detail="Las fases deben ir seguidas, sin huecos ni cruces, empezando en el día 0")
+        esperado = fase.dia_hasta + 1
+    if fases[-1].dia_hasta < 42:
+        raise HTTPException(status_code=400, detail="El plan debe cubrir al menos hasta el día 42")
+    antes = plan_alimento(db, lote)
+    detalle_antes = "; ".join(f"{f.nombre} {f.dia_desde}-{f.dia_hasta}" for f in antes)
+    for fase in antes:
+        db.delete(fase)
+    db.flush()
+    db.add_all(
+        FaseAlimento(lote_id=lote.id, nombre=f.nombre, dia_desde=f.dia_desde, dia_hasta=f.dia_hasta,
+                     presentacion=f.presentacion.strip(), producto=f.producto.strip())
+        for f in fases
+    )
+    detalle = "; ".join(f"{f.nombre} {f.dia_desde}-{f.dia_hasta}" + (f" ({f.producto.strip()})" if f.producto.strip() else "") for f in fases)
+    db.add(CambioAlimento(lote_id=lote.id, usuario_id=usuario.id, fecha=datetime.now(), motivo=body.motivo.strip(),
+                          detalle=f"Antes: {detalle_antes}. Ahora: {detalle}."))
+    db.commit()
+    return _alimentacion(db, lote)
 
 
 @app.post("/api/tratamientos/{tratamiento_id}/validar")
@@ -1289,15 +1635,25 @@ def _usuario_del_ambito(db: Session, actual: Usuario, usuario_id: int) -> Usuari
 
 def _validar_email(email: str) -> str:
     email = email.strip().lower()
-    if "@" not in email or email.startswith("@") or email.endswith("@"):
-        raise HTTPException(status_code=400, detail="El correo no es válido")
+    # Sin tildes ni ñ: los proveedores de correo no las aceptan en la dirección.
+    if not re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9\-]+(\.[a-z0-9\-]+)*\.[a-z]{2,}", email):
+        raise HTTPException(status_code=400, detail="El correo no es válido. Revisa que no tenga espacios, tildes ni ñ")
     return email
 
 
-def _nueva_cuenta(db: Session, nombre: str, email: str, rol: str, organizacion_id: int | None) -> tuple[Usuario, str]:
+def _nueva_cuenta(db: Session, nombre: str, email: str, rol: str, organizacion_id: int | None, revelar: bool = True) -> tuple[Usuario, str]:
+    """`revelar`: solo la plataforma puede saber a qué cliente pertenece un correo ya usado."""
     email = _validar_email(email)
-    if db.query(Usuario).filter(Usuario.email == email).first():
-        raise HTTPException(status_code=400, detail="Ya existe una cuenta con ese correo")
+    existente = _cuenta_existente(db, email)
+    if existente:
+        org = existente["organizacion"]
+        if revelar:
+            detalle = _texto_cuenta_existente(existente)
+        elif org and org["id"] == organizacion_id:
+            detalle = "Ese correo ya tiene una cuenta en tu equipo"
+        else:
+            detalle = "Ese correo ya está registrado en AviSmart. Usa otro correo"
+        raise HTTPException(status_code=400, detail=detalle)
     clave_temporal = secrets.token_urlsafe(10)
     usuario = Usuario(
         nombre=nombre.strip(),
@@ -1312,10 +1668,10 @@ def _nueva_cuenta(db: Session, nombre: str, email: str, rol: str, organizacion_i
     return usuario, clave_temporal
 
 
-def _alta(db: Session, body: UsuarioCrearIn, organizacion_id: int | None, permitidos: tuple[str, ...]) -> dict:
+def _alta(db: Session, body: UsuarioCrearIn, organizacion_id: int | None, permitidos: tuple[str, ...], revelar: bool = True) -> dict:
     if body.rol not in permitidos:
         raise HTTPException(status_code=400, detail="No puede crear cuentas con ese rol")
-    usuario, clave_temporal = _nueva_cuenta(db, body.nombre, body.email, body.rol, organizacion_id)
+    usuario, clave_temporal = _nueva_cuenta(db, body.nombre, body.email, body.rol, organizacion_id, revelar)
     db.commit()
     db.refresh(usuario)
     return {"usuario": _usuario(usuario), "clave_temporal": clave_temporal}
@@ -1359,7 +1715,7 @@ def usuarios(db: Session = Depends(get_db), actual: Usuario = Depends(gestor)):
 @app.post("/api/usuarios")
 def crear_usuario(body: UsuarioCrearIn, db: Session = Depends(get_db), actual: Usuario = Depends(gestor)):
     organizacion_id = None if actual.rol == "PLATAFORMA" else organizacion_de(actual)
-    return _alta(db, body, organizacion_id, CREA[actual.rol])
+    return _alta(db, body, organizacion_id, CREA[actual.rol], revelar=actual.rol == "PLATAFORMA")
 
 
 @app.post("/api/usuarios/{usuario_id}/restablecer-clave")
@@ -1403,7 +1759,7 @@ def estado_notificaciones(_: Usuario = Depends(require("PLATAFORMA"))):
 @app.post("/api/notificaciones/probar")
 def probar_notificaciones(_: Usuario = Depends(require("PLATAFORMA"))):
     if not estado_telegram()["configurado"]:
-        raise HTTPException(status_code=400, detail="Configura TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID")
+        raise HTTPException(status_code=400, detail="El canal de Telegram de la plataforma no está conectado")
     ok, error = probar_telegram()
     if not ok:
         raise HTTPException(status_code=502, detail=f"Telegram no pudo enviar el mensaje: {error}")
@@ -1429,7 +1785,7 @@ def telegram_estado(db: Session = Depends(get_db), usuario: Usuario = Depends(ge
 @app.post("/api/organizacion/telegram/vincular")
 def telegram_vincular(db: Session = Depends(get_db), usuario: Usuario = Depends(gestor_cliente)):
     if not notifications.bot_configurado():
-        raise HTTPException(status_code=400, detail="El bot de Telegram de AviSmart aún no está configurado. Avisa al equipo de AviSmart")
+        raise HTTPException(status_code=400, detail="Las alertas por Telegram aún no están activas para tu cuenta. Escríbenos desde Soporte y las activamos")
     datos = notifications.generar_codigo(_mi_organizacion(db, usuario))
     db.commit()
     return datos
@@ -1484,7 +1840,7 @@ def solicitudes_plataforma(db: Session = Depends(get_db), _: Usuario = Depends(p
         .order_by(SolicitudContacto.creada_en.desc())
         .all()
     )
-    return [_solicitud(s) for s in solicitudes]
+    return [_solicitud(s, db) for s in solicitudes]
 
 
 @app.patch("/api/plataforma/solicitudes/{solicitud_id}")
@@ -1502,7 +1858,7 @@ def actualizar_solicitud(
     solicitud.estado = body.estado
     solicitud.atendida_en = datetime.now() if body.estado != "NUEVA" else None
     db.commit()
-    return _solicitud(solicitud)
+    return _solicitud(solicitud, db)
 
 
 def _cargar_organizacion(db: Session, organizacion_id: int) -> Organizacion:
@@ -1556,6 +1912,33 @@ def cambiar_estado_organizacion(
     organizacion.estado = body.estado
     db.commit()
     return _organizacion(db, organizacion)
+
+
+@app.post("/api/plataforma/organizaciones/{organizacion_id}/soporte")
+def entrar_soporte(organizacion_id: int, db: Session = Depends(get_db), actual: Usuario = Depends(plataforma)):
+    """Abre el sistema del cliente con los permisos de su productor, para configurarlo o ayudarlo."""
+    organizacion = _cargar_organizacion(db, organizacion_id)
+    return {"token": create_token(actual, soporte_org=organizacion.id), "usuario": _usuario(UsuarioSoporte(actual, organizacion))}
+
+
+class EliminarClienteIn(BaseModel):
+    confirmacion: str = Field(max_length=160)
+
+
+@app.post("/api/plataforma/organizaciones/{organizacion_id}/eliminar")
+def eliminar_organizacion(
+    organizacion_id: int,
+    body: EliminarClienteIn,
+    db: Session = Depends(get_db),
+    _: Usuario = Depends(plataforma),
+):
+    """Borra el cliente para siempre, después de respaldar la base y exportar sus datos."""
+    organizacion = _cargar_organizacion(db, organizacion_id)
+    if organizacion.estado != "SUSPENDIDA":
+        raise HTTPException(status_code=400, detail="Primero suspende al cliente; solo un cliente suspendido se puede eliminar")
+    if body.confirmacion.strip().casefold() != organizacion.nombre.strip().casefold():
+        raise HTTPException(status_code=400, detail=f"Para confirmar, escribe exactamente el nombre del cliente: {organizacion.nombre}")
+    return baja_cliente.eliminar(db, organizacion)
 
 
 def _personal_de(db: Session, organizacion_id: int):

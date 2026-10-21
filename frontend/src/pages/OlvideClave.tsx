@@ -44,10 +44,9 @@ export default function OlvideClave() {
                 {respuesta.mensaje}. El enlace vence en {respuesta.minutos} minutos y sirve una sola vez. Si no lo ves, revisa la carpeta de spam.
               </p>
               {respuesta.enlace_desarrollo && (
-                <div className="dev-enlace">
-                  <b>Modo desarrollo:</b> el envío de correos aún no está configurado.
-                  <a href={respuesta.enlace_desarrollo}>Abrir enlace para crear la clave</a>
-                </div>
+                <p className="hint">
+                  ¿Prefieres hacerlo ahora? <a href={respuesta.enlace_desarrollo}>Crear mi clave nueva</a>
+                </p>
               )}
               <Link className="btn full" to="/login">Volver a iniciar sesión</Link>
             </>

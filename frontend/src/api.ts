@@ -16,11 +16,23 @@ export type Usuario = {
   activo: boolean;
   debe_cambiar_clave: boolean;
   organizacion: { id: number; nombre: string } | null;
+  /** Cuenta de plataforma trabajando dentro de un cliente (modo soporte). */
+  soporte?: boolean;
 };
 
 export type Galpon = { id: number; nombre: string; capacidad: number; granja_id: number; granja: string };
 
-export type Granja = { id: number; nombre: string; ubicacion: string; galpones: Galpon[] };
+export type Granja = {
+  id: number;
+  nombre: string;
+  ubicacion: string;
+  departamento: string | null;
+  provincia: string | null;
+  distrito: string | null;
+  latitud: number | null;
+  longitud: number | null;
+  galpones: Galpon[];
+};
 
 export type Organizacion = {
   id: number;
@@ -28,6 +40,8 @@ export type Organizacion = {
   estado: "ACTIVA" | "SUSPENDIDA";
   creada_en: string | null;
   solicitud_id: number | null;
+  /** Quién escribió la solicitud, cuando no es el productor del cliente. */
+  origen: { nombre: string; email: string; fecha: string } | null;
   usuarios_activos: number;
   granjas: number;
   lotes_activos: number;
@@ -119,7 +133,14 @@ export type SolicitudContacto = {
   motivo: "DEMO" | "COMERCIAL" | "SOPORTE" | "ALIANZA";
   plan: string;
   mensaje: string;
-  estado: "NUEVA" | "CONTACTADA" | "DESCARTADA" | "CLIENTE" | "SOSPECHOSA";
+  estado: "NUEVA" | "CONTACTADA" | "DESCARTADA" | "CLIENTE" | "SOSPECHOSA" | "BAJA";
+  telefono: string | null;
+  /** El correo ya tiene cuenta en AviSmart: no se debe crear otro cliente con él. */
+  cuenta_existente: {
+    rol: string;
+    activo: boolean;
+    organizacion: { id: number; nombre: string; estado: string } | null;
+  } | null;
   creada_en: string;
   atendida_en: string | null;
   verificada_en: string | null;
@@ -142,6 +163,8 @@ export type Panel = {
   temp_max: number;
   alertas_abiertas: number;
   umbral_mortalidad: number;
+  alimento_hoy: FaseAlimento | null;
+  tratamientos_indicados: number;
   lectura: {
     temperatura: number;
     humedad: number;
@@ -202,6 +225,8 @@ export type Tratamiento = {
   dias_restantes: number;
   estado: string;
   diagnostico: string;
+  /** Lo indicó el veterinario (receta); en estado INDICADO espera que el personal lo inicie. */
+  indicado: boolean;
 };
 
 export type Vacuna = {
@@ -225,8 +250,30 @@ export function leerToken() {
   return localStorage.getItem(TOKEN);
 }
 
+// Durante el modo soporte se guarda aparte la sesión de plataforma, para volver a ella al salir.
+const TOKEN_PLATAFORMA = "avismart_token_plataforma";
+
+export function iniciarSoporte(tokenSoporte: string) {
+  const actual = leerToken();
+  if (actual && !localStorage.getItem(TOKEN_PLATAFORMA)) localStorage.setItem(TOKEN_PLATAFORMA, actual);
+  localStorage.setItem(TOKEN, tokenSoporte);
+}
+
+/** Vuelve a la sesión de plataforma. Devuelve false si ya no existe. */
+export function terminarSoporte() {
+  const plataforma = localStorage.getItem(TOKEN_PLATAFORMA);
+  localStorage.removeItem(TOKEN_PLATAFORMA);
+  if (!plataforma) {
+    localStorage.removeItem(TOKEN);
+    return false;
+  }
+  localStorage.setItem(TOKEN, plataforma);
+  return true;
+}
+
 export function cerrarSesionLocal() {
   localStorage.removeItem(TOKEN);
+  localStorage.removeItem(TOKEN_PLATAFORMA);
 }
 
 export class ApiError extends Error {
@@ -328,3 +375,12 @@ export function num(value: number, digits = 0) {
     maximumFractionDigits: digits,
   });
 }
+
+export type FaseAlimento = { nombre: string; dia_desde: number; dia_hasta: number; presentacion: string; producto: string };
+export type Alimentacion = {
+  dia_vida: number;
+  fases: FaseAlimento[];
+  fase_actual: string | null;
+  cambios: { fecha: string; usuario: string; motivo: string; detalle: string }[];
+  catalogo: { fases: (FaseAlimento & { nota: string })[]; nombres: string[]; presentaciones: string[] };
+};

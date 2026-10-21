@@ -18,6 +18,13 @@ class CurvasTest(unittest.TestCase):
         self.assertEqual(peso_esperado(49, "Ross"), 3681)
         self.assertEqual(peso_esperado(49, "Cobb"), 4001)
 
+    def test_cuatro_lineas_con_su_curva_y_nombres_antiguos(self):
+        self.assertEqual(peso_esperado(42, "Ross 308"), 2998)
+        self.assertEqual(peso_esperado(42, "Cobb 500"), 3278)
+        self.assertEqual(peso_esperado(42, "Hubbard"), 3028)
+        self.assertEqual(peso_esperado(42, "Arbor Acres"), 2981)
+        self.assertEqual(peso_esperado(28, "Ross"), peso_esperado(28, "Ross 308"), "los lotes antiguos siguen con su curva")
+
     def test_interpolacion_entre_semanas(self):
         esperado = 213 + (533 - 213) * (3 / 7)
         self.assertAlmostEqual(peso_esperado(10, "Ross"), esperado)

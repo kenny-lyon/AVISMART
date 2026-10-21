@@ -5,6 +5,7 @@ import { Campo, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast 
 import { useLote } from "../lote";
 
 const VACIO = { mortalidad: "", alimento: "", agua: "", peso: "" };
+const FASES = ["Preinicio", "Inicio", "Crecimiento", "Acabado", "Retiro"];
 
 export default function Registro() {
   const { loteId, recargar } = useLote();
@@ -12,6 +13,8 @@ export default function Registro() {
   const [panel, setPanel] = useState<PanelLote | null>(null);
   const [dia, setDia] = useState(hoyLocal);
   const [datos, setDatos] = useState(VACIO);
+  // Vacío = el que indica el plan para hoy.
+  const [fase, setFase] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState<{ fecha: string; alertas: { mensaje: string; tipo: string }[] } | null>(null);
@@ -41,10 +44,12 @@ export default function Registro() {
           alimento_kg: Number(datos.alimento),
           agua_l: Number(datos.agua),
           peso_muestra_g: Number(datos.peso),
+          fase_alimento: fase || panel?.alimento_hoy?.nombre || "",
         }),
       });
       setResultado({ fecha: dia, alertas: data.alertas });
       setDatos(VACIO);
+      setFase("");
       avisar(data.alertas.length ? `Registro guardado con ${data.alertas.length} alerta(s).` : "Registro guardado.");
       await Promise.all([recargar(), cargar()]);
     } catch (err) {
@@ -98,6 +103,15 @@ export default function Registro() {
                   </Campo>
                 </Seccion>
                 <Seccion titulo="3. Consumo">
+                  <Campo
+                    label="Tipo de alimento"
+                    ancho
+                    ayuda={panel.alimento_hoy ? `Según el plan del veterinario hoy corresponde ${panel.alimento_hoy.nombre}${panel.alimento_hoy.producto ? ` (${panel.alimento_hoy.producto})` : ""}. Cámbialo solo si diste otro.` : undefined}
+                  >
+                    <select value={fase || panel.alimento_hoy?.nombre || ""} onChange={(e) => setFase(e.target.value)}>
+                      {FASES.map((f) => <option key={f}>{f}</option>)}
+                    </select>
+                  </Campo>
                   <Campo label="Alimento (kg)">
                     <input type="number" min="0" max={Math.floor(panel.aves_vivas * 0.35 + 1)} step="0.1" inputMode="decimal" value={datos.alimento} onChange={set("alimento")} placeholder={anterior ? `Anterior: ${num(anterior.alimento_kg, 1)}` : ""} required />
                   </Campo>

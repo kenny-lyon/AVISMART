@@ -3,6 +3,24 @@ import { Link } from "react-router-dom";
 import { api, num, type Galpon, type Granja } from "../api";
 import { Campo, DrawerForm, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import UbicacionGranja, { type Ubicacion } from "../components/UbicacionGranja";
+
+const SIN_UBICACION: Ubicacion = { departamento: "", provincia: "", distrito: "", latitud: null, longitud: null };
+
+const MAX_GALPONES = 10;
+const MAX_CAPACIDAD = 100_000;
+
+/** Mismo criterio que el servidor: primer número libre de la granja (Galpón 01 … Galpón 10). */
+function siguienteGalpon(g: Granja) {
+  const usados = new Set(g.galpones.map((x) => Number(/^galp[oó]n\s*0*(\d{1,2})$/i.exec(x.nombre.trim())?.[1])));
+  const n = Array.from({ length: MAX_GALPONES }, (_, i) => i + 1).find((i) => !usados.has(i)) ?? MAX_GALPONES;
+  return `Galpón ${String(n).padStart(2, "0")}`;
+}
+
+/** Enlace gratuito para llegar a la granja (abre la app de mapas del celular). */
+function comoLlegar(g: Granja) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${g.latitud},${g.longitud}`;
+}
 
 type Edicion =
   | { tipo: "granja"; granja?: Granja }
@@ -14,6 +32,7 @@ export default function Instalaciones() {
   const [edicion, setEdicion] = useState<Edicion | null>(null);
   const [nombre, setNombre] = useState("");
   const [extra, setExtra] = useState("");
+  const [ubicacion, setUbicacion] = useState<Ubicacion>(SIN_UBICACION);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const granjas = resumen?.granjas ?? [];
@@ -24,8 +43,15 @@ export default function Instalaciones() {
     if (e.tipo === "granja") {
       setNombre(e.granja?.nombre ?? "");
       setExtra(e.granja?.ubicacion ?? "");
+      setUbicacion({
+        departamento: e.granja?.departamento ?? "",
+        provincia: e.granja?.provincia ?? "",
+        distrito: e.granja?.distrito ?? "",
+        latitud: e.granja?.latitud ?? null,
+        longitud: e.granja?.longitud ?? null,
+      });
     } else {
-      setNombre(e.galpon?.nombre ?? "");
+      setNombre(e.galpon?.nombre ?? siguienteGalpon(e.granja));
       setExtra(e.galpon ? String(e.galpon.capacidad) : "");
     }
     setEdicion(e);
@@ -37,12 +63,13 @@ export default function Instalaciones() {
     setGuardando(true);
     try {
       if (edicion.tipo === "granja") {
-        const cuerpo = JSON.stringify({ nombre, ubicacion: extra });
+        // Con el distrito elegido, la ubicación legible la arma el sistema ("Juliaca, San Román, Puno").
+        const cuerpo = JSON.stringify({ nombre, ...ubicacion, ubicacion: ubicacion.distrito ? "" : extra });
         if (edicion.granja) await api(`/granjas/${edicion.granja.id}`, { method: "PUT", body: cuerpo });
         else await api("/granjas", { method: "POST", body: cuerpo });
         avisar(edicion.granja ? "Granja avícola actualizada." : "Granja avícola registrada. Ahora agrega sus galpones.");
       } else {
-        const cuerpo = JSON.stringify({ nombre, capacidad: Number(extra) });
+        const cuerpo = JSON.stringify({ capacidad: Number(extra) });
         if (edicion.galpon) await api(`/galpones/${edicion.galpon.id}`, { method: "PUT", body: cuerpo });
         else await api(`/granjas/${edicion.granja.id}/galpones`, { method: "POST", body: cuerpo });
         avisar(edicion.galpon ? "Galpón actualizado." : `Galpón "${nombre}" agregado.`);
@@ -86,14 +113,29 @@ export default function Instalaciones() {
           <Panel
             key={granja.id}
             titulo={granja.nombre}
-            descripcion={granja.ubicacion}
+            descripcion={
+              <>
+                {granja.ubicacion}
+                {granja.latitud !== null && (
+                  <a className="enlace-mapa" href={comoLlegar(granja)} target="_blank" rel="noreferrer">
+                    <Icon name="ubicacion" size={14} /> Cómo llegar
+                  </a>
+                )}
+              </>
+            }
             sinPadding
             acciones={
               <>
                 <button className="btn small secondary" type="button" onClick={() => abrir({ tipo: "granja", granja })}>
                   <Icon name="editar" size={15} /> Editar
                 </button>
-                <button className="btn small" type="button" onClick={() => abrir({ tipo: "galpon", granja })}>
+                <button
+                  className="btn small"
+                  type="button"
+                  onClick={() => abrir({ tipo: "galpon", granja })}
+                  disabled={granja.galpones.length >= MAX_GALPONES}
+                  title={granja.galpones.length >= MAX_GALPONES ? `Una granja avícola puede tener hasta ${MAX_GALPONES} galpones` : undefined}
+                >
                   <Icon name="mas" size={15} /> Agregar galpón
                 </button>
               </>
@@ -147,16 +189,33 @@ export default function Instalaciones() {
         error={error}
       >
         <Seccion titulo={esGranja ? "Granja avícola" : "Galpón"}>
-          <Campo label="Nombre" ancho>
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder={esGranja ? "Granja avícola San Martín" : "Galpón 1"} required minLength={esGranja ? 3 : 1} />
-          </Campo>
           {esGranja ? (
-            <Campo label="Ubicación" ancho>
-              <input value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="Juliaca, Puno" required minLength={2} />
+            <Campo label="Nombre" ancho>
+              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Granja avícola San Fernando" required minLength={3} />
             </Campo>
           ) : (
-            <Campo label="Capacidad (aves)" ancho ayuda="Número máximo de pollitos que admite el galpón.">
-              <input type="number" min="1" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="6000" required />
+            <Campo label="Galpón" ancho ayuda={editando ? "El número del galpón no cambia." : `Se numera solo, en orden. Máximo ${MAX_GALPONES} galpones por granja avícola.`}>
+              <input value={nombre} readOnly aria-readonly="true" />
+            </Campo>
+          )}
+          {esGranja ? (
+            <UbicacionGranja valor={ubicacion} onCambio={setUbicacion} />
+          ) : (
+            <Campo label="Capacidad (aves)" ancho ayuda="Número máximo de pollitos que admite el galpón (hasta 100 000).">
+              <input
+                type="number"
+                min="1"
+                max={MAX_CAPACIDAD}
+                inputMode="numeric"
+                value={extra}
+                onChange={(e) => {
+                  // Solo dígitos y nunca más de 100 000: no deja seguir escribiendo ceros.
+                  const digitos = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setExtra(digitos && Number(digitos) > MAX_CAPACIDAD ? String(MAX_CAPACIDAD) : digitos);
+                }}
+                placeholder="6000"
+                required
+              />
             </Campo>
           )}
         </Seccion>

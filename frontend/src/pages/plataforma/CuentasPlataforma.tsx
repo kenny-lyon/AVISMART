@@ -35,7 +35,7 @@ export default function CuentasPlataforma() {
       <Cuentas roles={["PLATAFORMA"]} titulo="Equipo AviSmart" descripcion="Tendrán los mismos permisos que tú." />
       <Panel
         titulo="Notificaciones por Telegram"
-        descripcion="Canal de la plataforma (TELEGRAM_CHAT_ID): aquí llegan los avisos de solicitudes nuevas confirmadas. Las alertas de los clientes van solo al chat que cada cliente vincula."
+        descripcion="Canal de la plataforma: aquí llegan los avisos de solicitudes nuevas confirmadas. Las alertas de los clientes van solo al chat que cada cliente vincula."
         acciones={telegram && <Estado valor={telegram.configurado ? "ACTIVO" : "INACTIVO"} texto={telegram.configurado ? "Configurado" : "No configurado"} />}
       >
         {telegram?.configurado ? (
@@ -43,7 +43,7 @@ export default function CuentasPlataforma() {
             {probando ? "Enviando…" : "Enviar mensaje de prueba"}
           </button>
         ) : (
-          <p className="muted" style={{ margin: 0 }}>Completa TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en backend/.env y reinicia la API.</p>
+          <p className="muted" style={{ margin: 0 }}>El canal de Telegram de la plataforma no está conectado. Al conectarlo, aquí podrás enviar un mensaje de prueba.</p>
         )}
       </Panel>
     </>

@@ -105,11 +105,11 @@ export default function Contacto() {
           <p className="pf-eyebrow"><span/>Estamos para ayudarte</p>
           <h1>Hablemos sobre tu granja avícola.</h1>
           {/* DEMO oculto por ahora: "Solicita una demostración, consulta un plan…" */}
-          <p>Consulta un plan o cuéntanos qué necesita tu operación. Esta solicitud no crea una cuenta automáticamente.</p>
+          <p>Consulta un plan o cuéntanos qué necesita tu operación avicola.</p>
           <div className="contact-points">
             {/* DEMO oculto por ahora: <div><strong>Demo personalizada</strong><span>Usamos ejemplos acordes con tu escala y operación.</span></div> */}
             <div><strong>Onboarding acompañado</strong><span>Configuramos contigo la primera granja avícola y sus galpones.</span></div>
-            <div><strong>Acceso controlado</strong><span>Las credenciales se entregan después de validar al cliente.</span></div>
+            <div><strong>Acceso controlado</strong><span>Una vez validada tu solicitud, recibirás tus credenciales de acceso.</span></div>
           </div>
         </section>
         <section className="contact-card" id="formulario">
@@ -122,10 +122,9 @@ export default function Contacto() {
               </p>
               <p className="contact-nota">¿No lo ves? Revisa la carpeta de spam o promociones.</p>
               {enviado.enlace_desarrollo && (
-                <div className="contact-dev">
-                  <b>Modo desarrollo:</b> el envío de correos aún no está configurado.
-                  <a href={enviado.enlace_desarrollo}>Abrir enlace de confirmación</a>
-                </div>
+                <p className="contact-nota">
+                  ¿Prefieres hacerlo ahora? <a href={enviado.enlace_desarrollo}>Confirmar mi correo</a>
+                </p>
               )}
               <button className="pf-button yellow" onClick={() => setEnviado(null)}>Enviar otra solicitud</button>
             </div>
@@ -136,6 +135,10 @@ export default function Contacto() {
               <div className="contact-grid">
                 <label>Nombre completo *<input name="nombre" required minLength={3} /></label>
                 <label>Correo electrónico *<input name="email" type="email" required /></label>
+                <label>Celular (opcional)
+                  <input name="telefono" type="tel" inputMode="tel" maxLength={20} pattern="[+0-9 \-]{9,20}" placeholder="Ejm: 987 654 321"
+                    title="Celular de 9 dígitos que empieza con 9" />
+                </label>
                 <label>Empresa o granja avícola<input name="empresa" /></label>
                 <label>País *<input name="pais" value="Perú" readOnly aria-readonly="true" title="Por ahora atendemos solo en Perú" /></label>
                 <label>Número de aves por ciclo

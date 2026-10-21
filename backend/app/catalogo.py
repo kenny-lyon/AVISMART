@@ -6,6 +6,8 @@ definitivos son los de la etiqueta del producto y los confirma el médico veteri
 
 VACUNAS = [
     {"nombre": "Marek (HVT)", "via": "Subcutánea", "dia": 0, "nota": "Se aplica en la incubadora."},
+    {"nombre": "Gumboro vectorial (HVT-IBD)", "via": "Subcutánea o in ovo", "dia": 0, "nota": "Se aplica en la incubadora."},
+    {"nombre": "Newcastle vectorial (HVT-ND)", "via": "Subcutánea o in ovo", "dia": 0, "nota": "Se aplica en la incubadora."},
     {"nombre": "Newcastle + Bronquitis (B1 + H120)", "via": "Ocular o spray", "dia": 1, "nota": "Primera dosis en granja."},
     {"nombre": "Newcastle oleosa (inactivada)", "via": "Subcutánea", "dia": 1, "nota": "Protección de larga duración."},
     {"nombre": "Coccidiosis (vacuna viva)", "via": "Spray o agua de bebida", "dia": 1, "nota": "No usar anticoccidiales en el alimento."},
@@ -49,3 +51,40 @@ def vacuna(nombre: str) -> dict | None:
 
 def medicamento(nombre: str) -> dict | None:
     return _MEDICAMENTOS.get(nombre)
+
+
+# Plantas de incubación y empresas avícolas del Perú que venden pollito BB de engorde.
+# Es solo una ayuda para elegir: el formulario acepta cualquier otro proveedor escrito a mano.
+INCUBADORAS = [
+    "San Fernando",
+    "Redondos",
+    "Avinka",
+    "Rico Pollo",
+    "Avícola Yugoslavia",
+    "Chimú Agropecuaria",
+    "Santa Elena",
+    "El Rocío",
+    "IASA (Inversiones Avipecuarias)",
+    "Guillermo Li",
+    "Avícola As de Oro",
+]
+
+# Vacunas con las que el pollito BB suele llegar de la incubadora (se marcan al abrir el lote).
+VACUNAS_INCUBADORA = [
+    {"nombre": "Marek (HVT)", "via": "Subcutánea o in ovo"},
+    {"nombre": "Gumboro vectorial (HVT-IBD)", "via": "Subcutánea o in ovo"},
+    {"nombre": "Newcastle vectorial (HVT-ND)", "via": "Subcutánea o in ovo"},
+    {"nombre": "Newcastle + Bronquitis (B1 + H120)", "via": "Spray en la incubadora"},
+    {"nombre": "Coccidiosis (vacuna viva)", "via": "Spray en la incubadora"},
+]
+
+# Fases de alimento del pollo de engorde (plan base; el veterinario lo puede variar por lote).
+FASES_ALIMENTO = [
+    {"nombre": "Preinicio", "dia_desde": 0, "dia_hasta": 10, "presentacion": "Migaja", "nota": "Alta proteína (22–23 %) para arrancar."},
+    {"nombre": "Inicio", "dia_desde": 11, "dia_hasta": 21, "presentacion": "Migaja o pellet pequeño", "nota": "Proteína 21–22 %."},
+    {"nombre": "Crecimiento", "dia_desde": 22, "dia_hasta": 35, "presentacion": "Pellet", "nota": "Proteína 19–20 %."},
+    {"nombre": "Acabado", "dia_desde": 36, "dia_hasta": 70, "presentacion": "Pellet", "nota": "Proteína 18–19 %, más energía."},
+]
+# «Retiro»: alimento sin medicamentos en los últimos días antes de la faena (opcional en el plan).
+NOMBRES_FASE = ("Preinicio", "Inicio", "Crecimiento", "Acabado", "Retiro")
+PRESENTACIONES = ("Harina", "Migaja", "Migaja o pellet pequeño", "Pellet")

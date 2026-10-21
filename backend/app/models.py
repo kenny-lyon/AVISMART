@@ -77,6 +77,7 @@ class SolicitudContacto(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nombre: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(160), index=True)
+    telefono: Mapped[str | None] = mapped_column(String(20), nullable=True)
     empresa: Mapped[str] = mapped_column(String(160), default="")
     pais: Mapped[str] = mapped_column(String(80))
     aves: Mapped[str] = mapped_column(String(60), default="")
@@ -84,6 +85,7 @@ class SolicitudContacto(Base):
     plan: Mapped[str] = mapped_column(String(40), default="POR_DEFINIR")
     mensaje: Mapped[str] = mapped_column(Text)
     # PENDIENTE (sin confirmar el correo) · NUEVA (verificada) · CONTACTADA · CLIENTE · DESCARTADA · SOSPECHOSA
+    # · BAJA (fue cliente y ese cliente se eliminó)
     estado: Mapped[str] = mapped_column(String(20), default="NUEVA")
     creada_en: Mapped[datetime] = mapped_column(DateTime)
     atendida_en: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -101,6 +103,12 @@ class Granja(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nombre: Mapped[str] = mapped_column(String(160))
     ubicacion: Mapped[str] = mapped_column(String(160))
+    # Ubigeo y punto exacto en el mapa (vacíos en granjas antiguas).
+    departamento: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    provincia: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    distrito: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    latitud: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitud: Mapped[float | None] = mapped_column(Float, nullable=True)
     organizacion_id: Mapped[int | None] = mapped_column(ForeignKey("organizaciones.id"), nullable=True, index=True)
     organizacion: Mapped[Organizacion | None] = relationship(back_populates="granjas")
     galpones: Mapped[list["Galpon"]] = relationship(back_populates="granja")
@@ -185,6 +193,8 @@ class RegistroDiario(Base):
     alimento_kg: Mapped[float] = mapped_column(Float)
     agua_l: Mapped[float] = mapped_column(Float)
     peso_muestra_g: Mapped[float] = mapped_column(Float)
+    # Fase de alimento que se dio ese día (Preinicio, Inicio, Crecimiento, Acabado o Retiro).
+    fase_alimento: Mapped[str | None] = mapped_column(String(30), nullable=True)
     lote: Mapped[Lote] = relationship(back_populates="registros")
     usuario: Mapped[Usuario] = relationship(back_populates="registros")
 
@@ -224,6 +234,9 @@ class Tratamiento(Base):
     estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE")
     diagnostico: Mapped[str] = mapped_column(Text, default="")
     validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    # Tratamiento indicado por el veterinario (estado INDICADO hasta que el personal lo inicia).
+    indicado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    iniciado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     lote: Mapped[Lote] = relationship(back_populates="tratamientos")
 
 
@@ -252,6 +265,8 @@ class Alerta(Base):
     creada_en: Mapped[datetime] = mapped_column(DateTime)
     # Recordatorios de vacuna: a qué vacuna pertenecen (antes se buscaban por el nombre).
     vacuna_id: Mapped[int | None] = mapped_column(ForeignKey("vacunaciones.id"), nullable=True, index=True)
+    # Aviso al personal de un tratamiento indicado por el veterinario.
+    tratamiento_id: Mapped[int | None] = mapped_column(ForeignKey("tratamientos.id"), nullable=True, index=True)
     atendida_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     notificacion_estado: Mapped[str] = mapped_column(String(20), default="PENDIENTE")
     notificacion_error: Mapped[str] = mapped_column(Text, default="")
@@ -264,3 +279,30 @@ class Configuracion(Base):
 
     clave: Mapped[str] = mapped_column(String(80), primary_key=True)
     valor: Mapped[str] = mapped_column(String(80))
+
+
+class FaseAlimento(Base):
+    """Plan de alimentación del lote: qué alimento corresponde a cada rango de días."""
+
+    __tablename__ = "fases_alimento"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    nombre: Mapped[str] = mapped_column(String(30))
+    dia_desde: Mapped[int] = mapped_column(Integer)
+    dia_hasta: Mapped[int] = mapped_column(Integer)
+    presentacion: Mapped[str] = mapped_column(String(40), default="")
+    producto: Mapped[str] = mapped_column(String(120), default="")
+
+
+class CambioAlimento(Base):
+    """Historial de variaciones del plan de alimentación (quién, cuándo y por qué)."""
+
+    __tablename__ = "cambios_alimento"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    fecha: Mapped[datetime] = mapped_column(DateTime)
+    motivo: Mapped[str] = mapped_column(Text)
+    detalle: Mapped[str] = mapped_column(Text, default="")

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, cerrarSesionLocal, guardarSesion, leerToken, type Usuario } from "./api";
+import { api, cerrarSesionLocal, guardarSesion, iniciarSoporte, leerToken, terminarSoporte, type Usuario } from "./api";
 
 type AuthState = {
   usuario: Usuario | null;
@@ -7,6 +7,8 @@ type AuthState = {
   entrar: (email: string, password: string) => Promise<Usuario>;
   cambiarClave: (actual: string, nueva: string) => Promise<void>;
   salir: () => void;
+  entrarSoporte: (organizacionId: number) => Promise<void>;
+  salirSoporte: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -51,8 +53,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsuario(null);
   }
 
+  async function entrarSoporte(organizacionId: number) {
+    const data = await api<{ token: string; usuario: Usuario }>(`/plataforma/organizaciones/${organizacionId}/soporte`, { method: "POST" });
+    iniciarSoporte(data.token);
+    setUsuario(data.usuario);
+  }
+
+  async function salirSoporte() {
+    if (!terminarSoporte()) {
+      setUsuario(null);
+      return;
+    }
+    try {
+      setUsuario(await api<Usuario>("/me"));
+    } catch {
+      cerrarSesionLocal();
+      setUsuario(null);
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ usuario, listo, entrar, cambiarClave, salir }}>
+    <AuthContext.Provider value={{ usuario, listo, entrar, cambiarClave, salir, entrarSoporte, salirSoporte }}>
       {children}
     </AuthContext.Provider>
   );

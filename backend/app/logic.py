@@ -2,11 +2,13 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from .models import Alerta, Configuracion, Galpon, Granja, LecturaAmbiental, Lote, RegistroDiario, Tratamiento, Vacunacion
+from . import catalogo
+from .models import Alerta, Configuracion, FaseAlimento, Galpon, Granja, LecturaAmbiental, Lote, RegistroDiario, Tratamiento, Vacunacion
 
 CURVAS = {
-    # Objetivos de rendimiento 2022, aves mixtas (as-hatched).
-    "Ross": [
+    # Peso vivo objetivo (g) de aves mixtas (as-hatched), según el manual de cada línea.
+    # Ross 308 y Cobb 500: objetivos 2022.
+    "Ross 308": [
         (0, 44),
         (7, 213),
         (14, 533),
@@ -16,7 +18,7 @@ CURVAS = {
         (42, 2998),
         (49, 3681),
     ],
-    "Cobb": [
+    "Cobb 500": [
         (0, 42),
         (7, 202),
         (14, 570),
@@ -26,11 +28,40 @@ CURVAS = {
         (42, 3278),
         (49, 4001),
     ],
+    # Hubbard Efficiency Plus: objetivos 2023 (la tabla oficial viene en libras; convertida a gramos).
+    "Hubbard": [
+        (0, 44),
+        (7, 216),
+        (14, 542),
+        (21, 1035),
+        (28, 1647),
+        (35, 2330),
+        (42, 3028),
+        (49, 3704),
+    ],
+    # Arbor Acres Plus: objetivos Aviagen 2022.
+    "Arbor Acres": [
+        (0, 44),
+        (7, 209),
+        (14, 527),
+        (21, 1006),
+        (28, 1611),
+        (35, 2287),
+        (42, 2981),
+        (49, 3649),
+    ],
 }
+LINEAS = tuple(CURVAS)
+# Nombres antiguos de las líneas (lotes registrados antes).
+ALIAS_LINEA = {"Ross": "Ross 308", "Cobb": "Cobb 500"}
 
 
-def peso_esperado(dia: int, linea: str = "Ross") -> float:
-    curva = CURVAS.get(linea, CURVAS["Ross"])
+def normalizar_linea(linea: str) -> str:
+    return ALIAS_LINEA.get(linea.strip(), linea.strip())
+
+
+def peso_esperado(dia: int, linea: str = "Ross 308") -> float:
+    curva = CURVAS.get(normalizar_linea(linea), CURVAS["Ross 308"])
     dia = max(0, dia)
     if dia >= curva[-1][0]:
         return float(curva[-1][1])
@@ -394,7 +425,8 @@ def carencias_activas(db: Session, lote_id: int, referencia: date | None = None)
     dia = referencia or date.today()
     filas = (
         db.query(Tratamiento)
-        .filter(Tratamiento.lote_id == lote_id)
+        # Un tratamiento indicado que todavía no se inicia no deja residuos.
+        .filter(Tratamiento.lote_id == lote_id, Tratamiento.estado != "INDICADO")
         .order_by(Tratamiento.fecha_inicio.desc())
         .all()
     )
@@ -416,3 +448,24 @@ def carencias_activas(db: Session, lote_id: int, referencia: date | None = None)
                 }
             )
     return activas
+
+
+def plan_alimento(db: Session, lote: Lote) -> list[FaseAlimento]:
+    """Fases de alimento del lote; si aún no tiene plan, se crea el plan base del catálogo."""
+    fases = db.query(FaseAlimento).filter(FaseAlimento.lote_id == lote.id).order_by(FaseAlimento.dia_desde).all()
+    if not fases:
+        fases = [
+            FaseAlimento(lote_id=lote.id, nombre=f["nombre"], dia_desde=f["dia_desde"], dia_hasta=f["dia_hasta"],
+                         presentacion=f["presentacion"], producto="")
+            for f in catalogo.FASES_ALIMENTO
+        ]
+        db.add_all(fases)
+        db.flush()
+    return fases
+
+
+def fase_del_dia(fases: list[FaseAlimento], dia: int) -> FaseAlimento | None:
+    for fase in fases:
+        if fase.dia_desde <= dia <= fase.dia_hasta:
+            return fase
+    return fases[-1] if fases and dia > fases[-1].dia_hasta else None

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
@@ -111,15 +112,51 @@ def ensure_schema() -> None:
             ("confirmacion_enviada", "INTEGER DEFAULT 0"),
             ("verificada_en", "DATETIME"),
             ("motivo_sospecha", "VARCHAR(120)"),
+            ("telefono", "VARCHAR(20)"),
         ):
             if solicitud_cols and columna not in solicitud_cols:
                 conn.execute(text(f"ALTER TABLE solicitudes_contacto ADD COLUMN {columna} {tipo}"))
+        # Una solicitud que fue cliente y cuyo cliente ya se eliminó pasa a «dado de baja».
+        if solicitud_cols and conn.execute(text("SELECT name FROM sqlite_master WHERE name = 'organizaciones'")).first():
+            conn.execute(
+                text(
+                    "UPDATE solicitudes_contacto SET estado = 'BAJA' WHERE estado = 'CLIENTE' AND id NOT IN "
+                    "(SELECT solicitud_id FROM organizaciones WHERE solicitud_id IS NOT NULL)"
+                )
+            )
         usuario_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(usuarios)")).fetchall()}
         if "organizacion_id" not in usuario_cols:
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN organizacion_id INTEGER REFERENCES organizaciones(id)"))
         granja_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(granjas)")).fetchall()}
         if "organizacion_id" not in granja_cols:
             conn.execute(text("ALTER TABLE granjas ADD COLUMN organizacion_id INTEGER REFERENCES organizaciones(id)"))
+        # Receta veterinaria, aviso de tratamiento y fase de alimento del registro diario.
+        for tabla, columna, tipo in (
+            ("tratamientos", "indicado_por", "INTEGER REFERENCES usuarios(id)"),
+            ("tratamientos", "iniciado_por", "INTEGER REFERENCES usuarios(id)"),
+            ("alertas", "tratamiento_id", "INTEGER REFERENCES tratamientos(id)"),
+            ("registros_diarios", "fase_alimento", "VARCHAR(30)"),
+        ):
+            columnas = {row[1] for row in conn.execute(text(f"PRAGMA table_info({tabla})")).fetchall()}
+            if columnas and columna not in columnas:
+                conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
+        # Líneas genéticas con su nombre comercial completo.
+        conn.execute(text("UPDATE lotes SET linea = 'Ross 308' WHERE linea = 'Ross'"))
+        conn.execute(text("UPDATE lotes SET linea = 'Cobb 500' WHERE linea = 'Cobb'"))
+        # Galpones numerados con dos dígitos: «Galpón 1» -> «Galpón 01».
+        for galpon_id, nombre in conn.execute(text("SELECT id, nombre FROM galpones")).fetchall():
+            coincide = re.fullmatch(r"galp[oó]n\s*0*(\d{1,2})", (nombre or "").strip().lower())
+            if coincide and nombre != f"Galpón {int(coincide.group(1)):02d}":
+                conn.execute(text("UPDATE galpones SET nombre = :n WHERE id = :i"), {"n": f"Galpón {int(coincide.group(1)):02d}", "i": galpon_id})
+        for columna, tipo in (
+            ("departamento", "VARCHAR(60)"),
+            ("provincia", "VARCHAR(80)"),
+            ("distrito", "VARCHAR(80)"),
+            ("latitud", "FLOAT"),
+            ("longitud", "FLOAT"),
+        ):
+            if granja_cols and columna not in granja_cols:
+                conn.execute(text(f"ALTER TABLE granjas ADD COLUMN {columna} {tipo}"))
         # Los datos creados antes de separar clientes pasan a una organización "Demostración".
         sueltos = conn.execute(
             text(

@@ -1,0 +1,39 @@
+{
+  "sistema": "AviSmart",
+  "tipo": "exportacion_de_cliente",
+  "exportado_en": "2026-10-21T07:33:43",
+  "cliente": {
+    "id": 2,
+    "nombre": "Avicola Ruelas",
+    "estado": "ACTIVA",
+    "creada_en": "2026-10-21T07:27:07.756383",
+    "solicitud_id": null,
+    "telegram_chat_id": null,
+    "telegram_chat_nombre": null,
+    "telegram_vinculado_en": null
+  },
+  "tablas": {
+    "alertas": [],
+    "registros_diarios": [],
+    "vacunaciones": [],
+    "tratamientos": [],
+    "cierres_lote": [],
+    "lecturas_ambientales": [],
+    "lotes": [],
+    "galpones": [],
+    "granjas": [],
+    "usuarios": [
+      {
+        "id": 7,
+        "nombre": "ademir ruelas yanna",
+        "email": "ademir@gmail.com",
+        "rol": "PRODUCTOR",
+        "activo": 1,
+        "debe_cambiar_clave": 1,
+        "version_sesion": 0,
+        "organizacion_id": 2
+      }
+    ],
+    "configuracion": []
+  }
+}

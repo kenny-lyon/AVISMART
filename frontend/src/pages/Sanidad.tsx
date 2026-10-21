@@ -6,7 +6,7 @@ import { useLote } from "../lote";
 
 type VacunaCatalogo = { nombre: string; via: string; dia: number; nota: string };
 type Medicamento = { nombre: string; uso: string; dosis: string[]; vias: string[]; dias: number; carencia: number };
-const TRAT_VACIO = { medicamento: "", dosis: "", via: "", inicio: hoyLocal(), dias: "", carencia: "", aves: "" };
+const TRAT_VACIO = { medicamento: "", dosis: "", via: "", inicio: hoyLocal(), dias: "", carencia: "", aves: "", diagnostico: "" };
 
 /** Última fecha que se puede programar: 70 días después del ingreso. */
 function finCampana(ingreso: string) {
@@ -40,12 +40,20 @@ export default function Sanidad() {
   const [aplicando, setAplicando] = useState<Vacuna | null>(null);
   const [aplicacion, setAplicacion] = useState({ fecha: hoyLocal(), nota: "" });
   const [nota, setNota] = useState("");
+  const [iniciando, setIniciando] = useState<Tratamiento | null>(null);
+  const [fechaInicio, setFechaInicio] = useState(hoyLocal());
 
   const lote = resumen?.lotes.find((l) => l.id === loteId);
   const activo = lote?.estado === "ACTIVO";
   const puedeCargar = (usuario?.rol === "PRODUCTOR" || usuario?.rol === "OPERARIO") && activo;
   const esVet = usuario?.rol === "VETERINARIO";
+  const vetActivo = esVet && activo;
   const hoy = hoyLocal();
+  const enSieteDias = (() => {
+    const f = new Date();
+    f.setDate(f.getDate() + 7);
+    return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, "0")}-${String(f.getDate()).padStart(2, "0")}`;
+  })();
 
   useEffect(() => {
     api<{ vacunas: VacunaCatalogo[]; medicamentos: Medicamento[] }>("/catalogo/sanidad").then(setCatalogo).catch(() => undefined);
@@ -101,9 +109,10 @@ export default function Sanidad() {
   }
 
   function guardarTratamiento() {
+    // El veterinario indica (receta); el personal registra lo que ya aplicó.
     return enviar(
       () =>
-        api(`/lotes/${loteId}/tratamientos`, {
+        api(esVet ? `/lotes/${loteId}/tratamientos/indicar` : `/lotes/${loteId}/tratamientos`, {
           method: "POST",
           body: JSON.stringify({
             medicamento: trat.medicamento,
@@ -113,9 +122,12 @@ export default function Sanidad() {
             dias_tratamiento: Number(trat.dias),
             dias_carencia: Number(trat.carencia),
             aves_tratadas: trat.aves.trim() ? Number(trat.aves) : null,
+            ...(esVet ? { diagnostico: trat.diagnostico } : {}),
           }),
         }),
-      "Tratamiento registrado. La carencia ya corre y queda pendiente del veterinario.",
+      esVet
+        ? "Tratamiento indicado. El productor y el operario reciben el aviso para iniciarlo."
+        : "Tratamiento registrado. La carencia ya corre y queda pendiente del veterinario.",
       () => {
         setNuevoTrat(false);
         setTrat({ ...TRAT_VACIO, inicio: hoyLocal() });
@@ -126,7 +138,7 @@ export default function Sanidad() {
   function guardarVacuna() {
     return enviar(
       () => api(`/lotes/${loteId}/sanidad`, { method: "POST", body: JSON.stringify({ nombre: vac.nombre, fecha_programada: vac.fecha }) }),
-      "Vacuna propuesta. Falta que el veterinario apruebe la fecha.",
+      esVet ? "Vacuna programada. El personal ya puede registrar la aplicación." : "Vacuna propuesta. Falta que el veterinario apruebe la fecha.",
       () => {
         setNuevaVac(false);
         setVac({ nombre: "", fecha: hoyLocal() });
@@ -150,6 +162,27 @@ export default function Sanidad() {
       mensaje,
       () => setRevision(null),
     );
+  }
+
+  function abrirInicio(t: Tratamiento) {
+    setError("");
+    setFechaInicio(t.fecha_inicio <= hoyLocal() ? t.fecha_inicio : hoyLocal());
+    setIniciando(t);
+  }
+
+  function guardarInicio() {
+    if (!iniciando) return;
+    return enviar(
+      () => api(`/tratamientos/${iniciando.id}/iniciar`, { method: "POST", body: JSON.stringify({ fecha_inicio: fechaInicio }) }),
+      "Tratamiento iniciado. Desde hoy corre la carencia.",
+      () => setIniciando(null),
+    );
+  }
+
+  function abrirTratamiento() {
+    setError("");
+    setTrat({ ...TRAT_VACIO, inicio: hoyLocal() });
+    setNuevoTrat(true);
   }
 
   function abrirAplicacion(v: Vacuna) {
@@ -194,6 +227,7 @@ export default function Sanidad() {
     setRevision(r);
   }
 
+  const porIniciar = tratamientos.filter((t) => t.estado === "INDICADO");
   const pendientesT = tratamientos.filter((t) => t.estado === "PENDIENTE").length;
   const pendientesV = vacunas.filter((v) => v.estado === "PENDIENTE" || v.estado === "APLICADA").length;
   const enCarencia = tratamientos.filter((t) => t.en_carencia);
@@ -206,20 +240,31 @@ export default function Sanidad() {
     <>
       <PageHeader
         titulo="Vacunas y tratamientos"
-        descripcion="Vacunas: el veterinario aprueba la fecha, el personal registra la aplicación y el veterinario da su conformidad. Tratamientos: el sistema cuenta la carencia hasta la faena."
+        descripcion="Vacunas: el personal propone la fecha o la programa el veterinario; luego se registra la aplicación y el veterinario da su conformidad. Tratamientos: el veterinario puede indicarlos y el personal los inicia; el sistema cuenta la carencia hasta la faena."
         acciones={
-          puedeCargar && (
+          (puedeCargar || vetActivo) && (
             <>
               <button className="btn secondary" type="button" onClick={() => { setError(""); setNuevaVac(true); }}>
                 <Icon name="mas" /> Programar vacuna
               </button>
-              <button className="btn primario" type="button" onClick={() => { setError(""); setNuevoTrat(true); }}>
-                <Icon name="mas" /> Registrar tratamiento
+              <button className="btn primario" type="button" onClick={abrirTratamiento}>
+                <Icon name="mas" /> {esVet ? "Indicar tratamiento" : "Registrar tratamiento"}
               </button>
             </>
           )
         }
       />
+
+      {porIniciar.length > 0 && (
+        <div className="aviso info">
+          <Icon name="sanidad" />
+          <span>
+            {esVet
+              ? <>Indicaste {porIniciar.length} tratamiento(s) que el personal aún no inicia: <b>{porIniciar.map((t) => t.medicamento).join(", ")}</b>.</>
+              : <>El veterinario indicó <b>{porIniciar.map((t) => `${t.medicamento} (${t.dosis})`).join(", ")}</b>. Pulsa <b>Iniciar</b> cuando empieces a darlo.</>}
+          </span>
+        </div>
+      )}
 
       {enCarencia.length > 0 && (
         <div className="aviso alerta">
@@ -260,19 +305,36 @@ export default function Sanidad() {
                     <tr key={t.id}>
                       <td className="celda-principal">
                         <strong>{t.medicamento}</strong>
-                        <small>{t.dosis} · {t.via} · {t.aves_tratadas ? `${num(t.aves_tratadas)} aves` : "todo el lote"}</small>
+                        <small>
+                          {t.dosis} · {t.via} · {t.aves_tratadas ? `${num(t.aves_tratadas)} aves` : "todo el lote"}
+                          {t.indicado ? " · indicado por el veterinario" : ""}
+                        </small>
                       </td>
-                      <td>{fecha(t.fecha_inicio)} – {fecha(t.ultima_dosis)}</td>
                       <td>
-                        {t.en_carencia
-                          ? <Estado valor="VENCIDA" texto={`Hasta ${fecha(t.libre_faena)}`} />
-                          : <Estado valor="ACTIVO" texto={`Libre desde ${fecha(t.libre_faena)}`} />}
+                        {t.estado === "INDICADO"
+                          ? <span className="muted">Desde el {fecha(t.fecha_inicio)} · {t.dias_tratamiento} días</span>
+                          : <>{fecha(t.fecha_inicio)} – {fecha(t.ultima_dosis)}</>}
                       </td>
-                      <td><Estado valor={t.estado} /></td>
+                      <td>
+                        {t.estado === "INDICADO"
+                          ? <span className="muted">Corre al iniciar</span>
+                          : t.en_carencia
+                            ? <Estado valor="VENCIDA" texto={`Hasta ${fecha(t.libre_faena)}`} />
+                            : <Estado valor="ACTIVO" texto={`Libre desde ${fecha(t.libre_faena)}`} />}
+                      </td>
+                      <td>
+                        {t.estado === "INDICADO"
+                          ? <Estado valor="INDICADO" texto="Indicado · por iniciar" />
+                          : t.estado === "VALIDADA" ? <Estado valor="VALIDADA" texto="Conforme" /> : <Estado valor={t.estado} />}
+                      </td>
                       <td className="acciones">
-                        <button className="link-button" type="button" onClick={() => revisar({ tipo: "tratamiento", item: t })}>
-                          {esVet && t.estado === "PENDIENTE" ? "Revisar" : "Ver detalle"}
-                        </button>
+                        {puedeCargar && t.estado === "INDICADO" ? (
+                          <button className="link-button" type="button" onClick={() => abrirInicio(t)}>Iniciar</button>
+                        ) : (
+                          <button className="link-button" type="button" onClick={() => revisar({ tipo: "tratamiento", item: t })}>
+                            {esVet && t.estado === "PENDIENTE" ? "Revisar" : "Ver detalle"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -316,14 +378,31 @@ export default function Sanidad() {
 
       <DrawerForm
         abierto={nuevoTrat}
-        titulo="Registrar tratamiento"
-        descripcion="Los días de carencia son los que indica el frasco, contados desde la última dosis."
+        titulo={esVet ? "Indicar tratamiento" : "Registrar tratamiento"}
+        descripcion={esVet
+          ? "Receta para el lote: el productor o el operario la inician y la suministran. La carencia corre desde que la inicien."
+          : "Los días de carencia son los que indica el frasco, contados desde la última dosis."}
         onCerrar={() => setNuevoTrat(false)}
         onGuardar={guardarTratamiento}
         guardando={guardando}
-        textoGuardar="Registrar tratamiento"
+        textoGuardar={esVet ? "Indicar tratamiento" : "Registrar tratamiento"}
         error={error}
       >
+        {esVet && (
+          <Seccion titulo="Diagnóstico">
+            <Campo label="Motivo de la indicación" ancho ayuda="Lo verán el productor y el operario junto con la receta.">
+              <textarea
+                rows={3}
+                minLength={5}
+                maxLength={500}
+                required
+                value={trat.diagnostico}
+                onChange={(e) => setTrat({ ...trat, diagnostico: e.target.value })}
+                placeholder="Ej. Colibacilosis: mortalidad alta y lesiones en la necropsia"
+              />
+            </Campo>
+          </Seccion>
+        )}
         <Seccion titulo="Medicamento">
           <Campo label="Nombre" ancho ayuda={producto ? `Uso: ${producto.uso}.` : "Elige el producto aplicado."}>
             <select value={trat.medicamento} onChange={(e) => elegirMedicamento(e.target.value)} required>
@@ -345,8 +424,15 @@ export default function Sanidad() {
           </Campo>
         </Seccion>
         <Seccion titulo="Aplicación y carencia">
-          <Campo label="Primer día">
-            <input type="date" min={lote?.fecha_ingreso} max={hoyLocal()} value={trat.inicio} onChange={(e) => setTrat({ ...trat, inicio: e.target.value })} required />
+          <Campo label={esVet ? "Iniciar desde" : "Primer día"} ayuda={esVet ? "Hoy o dentro de los próximos 7 días." : undefined}>
+            <input
+              type="date"
+              min={esVet ? hoy : lote?.fecha_ingreso}
+              max={esVet ? enSieteDias : hoyLocal()}
+              value={trat.inicio}
+              onChange={(e) => setTrat({ ...trat, inicio: e.target.value })}
+              required
+            />
           </Campo>
           <Campo label="Días de tratamiento">
             <input type="number" min="1" max="30" value={trat.dias} onChange={(e) => setTrat({ ...trat, dias: e.target.value })} required />
@@ -363,7 +449,9 @@ export default function Sanidad() {
       <DrawerForm
         abierto={nuevaVac}
         titulo="Programar vacuna"
-        descripcion="Propón la fecha. El veterinario la aprueba y después se registra la aplicación."
+        descripcion={esVet
+          ? "Queda programada y aprobada. El productor o el operario registran la aplicación."
+          : "Propón la fecha. El veterinario la aprueba y después se registra la aplicación."}
         onCerrar={() => setNuevaVac(false)}
         onGuardar={guardarVacuna}
         guardando={guardando}
@@ -385,6 +473,31 @@ export default function Sanidad() {
           </Campo>
           <Campo label="Fecha programada" ancho ayuda={vacunaElegida ? "Propuesta según la edad del lote; puedes cambiarla." : undefined}>
             <input type="date" min={lote?.fecha_ingreso} max={lote ? finCampana(lote.fecha_ingreso) : undefined} value={vac.fecha} onChange={(e) => setVac({ ...vac, fecha: e.target.value })} required />
+          </Campo>
+        </Seccion>
+      </DrawerForm>
+
+      <DrawerForm
+        abierto={iniciando !== null}
+        titulo="Iniciar tratamiento"
+        descripcion={iniciando ? `${iniciando.medicamento} · ${iniciando.dosis} · ${iniciando.via} · ${iniciando.dias_tratamiento} días` : undefined}
+        onCerrar={() => setIniciando(null)}
+        onGuardar={guardarInicio}
+        guardando={guardando}
+        textoGuardar="Iniciar tratamiento"
+        error={error}
+      >
+        {iniciando && (
+          <dl className="ficha">
+            <dt>Indicado por</dt><dd>Médico veterinario</dd>
+            <dt>Diagnóstico</dt><dd>{iniciando.diagnostico}</dd>
+            <dt>Aves</dt><dd>{iniciando.aves_tratadas ? num(iniciando.aves_tratadas) : "Todo el lote"}</dd>
+            <dt>Carencia</dt><dd>{iniciando.dias_carencia} días después de la última dosis</dd>
+          </dl>
+        )}
+        <Seccion titulo="Inicio">
+          <Campo label="Fecha en que empezaste a darlo" ancho ayuda="Desde esta fecha se cuentan los días de tratamiento y la carencia.">
+            <input type="date" value={fechaInicio} min={lote?.fecha_ingreso} max={hoyLocal()} onChange={(e) => setFechaInicio(e.target.value)} required />
           </Campo>
         </Seccion>
       </DrawerForm>
@@ -431,6 +544,7 @@ export default function Sanidad() {
         {revision?.tipo === "tratamiento" && (
           <dl className="ficha">
             <dt>Estado</dt><dd><Estado valor={revision.item.estado} /></dd>
+            <dt>Origen</dt><dd>{revision.item.indicado ? "Indicado por el veterinario" : "Registrado por el personal"}</dd>
             <dt>Dosis y vía</dt><dd>{revision.item.dosis} · {revision.item.via}</dd>
             <dt>Aves</dt><dd>{revision.item.aves_tratadas ? num(revision.item.aves_tratadas) : "Todo el lote"}</dd>
             <dt>Aplicación</dt><dd>{fecha(revision.item.fecha_inicio)} al {fecha(revision.item.ultima_dosis)} ({revision.item.dias_tratamiento} días)</dd>

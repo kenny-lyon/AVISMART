@@ -39,7 +39,7 @@ export default function Login() {
             Si la sanidad se sale de rango, el aviso queda para el veterinario y el productor.
           </p>
         </div>
-        <small>Granja avícola de engorde · Puno</small>
+        <small>Gestión de granjas avícolas de engorde</small>
       </section>
       <section className="login-panel">
         <form className="card login-card" onSubmit={submit}>
@@ -53,7 +53,7 @@ export default function Login() {
           <button className="btn full" disabled={cargando}>
             {cargando ? "Ingresando…" : "Iniciar sesión"}
           </button>
-          <p className="hint access-note">Las cuentas son entregadas por el administrador. AviSmart no permite registro público.</p>
+          <p className="hint access-note">Tu cuenta la entrega AviSmart o el productor de tu granja avícola. No hay registro público.</p>
           <p className="hint" style={{ marginTop: 16, marginBottom: 0 }}>
             <Link to="/">Volver a la página de AviSmart</Link>
           </p>

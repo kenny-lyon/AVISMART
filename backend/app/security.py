@@ -11,7 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from .db import get_db
-from .models import Usuario
+from .models import Organizacion, Usuario
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -35,13 +35,40 @@ def verify_password(password: str, stored: str) -> bool:
     return secrets.compare_digest(check, digest)
 
 
-def create_token(usuario: Usuario) -> str:
+HORAS_SOPORTE = 4
+
+
+class UsuarioSoporte:
+    """La cuenta de plataforma dentro de un cliente, con los permisos de su productor.
+
+    No es una fila de la base: lo que registra queda a nombre de la persona real de la plataforma
+    (su id), y su clave no se puede cambiar desde aquí.
+    """
+
+    soporte = True
+
+    def __init__(self, real: Usuario, organizacion: Organizacion):
+        self.real = real
+        self.id = real.id
+        self.nombre = real.nombre
+        self.email = real.email
+        self.rol = "PRODUCTOR"
+        self.activo = 1
+        self.debe_cambiar_clave = 0
+        self.version_sesion = real.version_sesion
+        self.organizacion_id = organizacion.id
+        self.organizacion = organizacion
+
+
+def create_token(usuario: Usuario, soporte_org: int | None = None) -> str:
     payload = {
         "sub": str(usuario.id),
         "rol": usuario.rol,
         "ver": usuario.version_sesion or 0,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=12),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=HORAS_SOPORTE if soporte_org else 12),
     }
+    if soporte_org:
+        payload["sop"] = soporte_org
     return jwt.encode(payload, SECRET, algorithm=ALGO)
 
 
@@ -50,21 +77,27 @@ def get_current_user(
     db: Session = Depends(get_db),
 ) -> Usuario:
     if creds is None:
-        raise HTTPException(status_code=401, detail="Debe iniciar sesión")
+        raise HTTPException(status_code=401, detail="Inicia sesión para continuar")
     try:
         payload = jwt.decode(creds.credentials, SECRET, algorithms=[ALGO])
         user_id = int(payload["sub"])
         version = int(payload.get("ver", 0))
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
-        raise HTTPException(status_code=401, detail="Sesión inválida")
+        raise HTTPException(status_code=401, detail="Tu sesión expiró. Vuelve a iniciar sesión")
     usuario = db.get(Usuario, user_id)
     if usuario is None or not usuario.activo:
-        raise HTTPException(status_code=401, detail="Sesión inválida")
+        raise HTTPException(status_code=401, detail="Tu sesión expiró. Vuelve a iniciar sesión")
     if version != (usuario.version_sesion or 0):
         # La clave cambió después de abrir esta sesión.
         raise HTTPException(status_code=401, detail="Tu sesión se cerró porque la clave cambió. Vuelve a entrar")
+    if payload.get("sop"):
+        # Modo soporte: solo una cuenta de plataforma puede entrar a un cliente.
+        organizacion = db.get(Organizacion, int(payload["sop"])) if usuario.rol == "PLATAFORMA" else None
+        if organizacion is None:
+            raise HTTPException(status_code=401, detail="El modo soporte terminó. Vuelve a entrar desde la ficha del cliente")
+        return UsuarioSoporte(usuario, organizacion)
     if organizacion_suspendida(usuario):
-        raise HTTPException(status_code=401, detail="El acceso de su organización está suspendido")
+        raise HTTPException(status_code=401, detail="El acceso de tu empresa está suspendido. Comunícate con AviSmart")
     return usuario
 
 
@@ -91,21 +124,21 @@ def organizacion_suspendida(usuario: Usuario) -> bool:
 
 def get_ready_user(usuario: Usuario = Depends(get_current_user)) -> Usuario:
     if usuario.debe_cambiar_clave:
-        raise HTTPException(status_code=403, detail="Debe cambiar la clave temporal antes de continuar")
+        raise HTTPException(status_code=403, detail="Cambia tu clave temporal antes de continuar")
     return usuario
 
 
 def organizacion_de(usuario: Usuario) -> int:
     """Organización del usuario cliente. Las cuentas de plataforma no operan granjas avícolas."""
     if usuario.organizacion_id is None:
-        raise HTTPException(status_code=403, detail="Esta sección es para las cuentas de una organización")
+        raise HTTPException(status_code=403, detail="Esta sección es para las cuentas de una granja cliente")
     return usuario.organizacion_id
 
 
 def require(*roles: str):
     def checker(usuario: Usuario = Depends(get_ready_user)) -> Usuario:
         if usuario.rol not in roles:
-            raise HTTPException(status_code=403, detail="No tiene permiso para esta acción")
+            raise HTTPException(status_code=403, detail="Tu cuenta no tiene permiso para esta acción")
         return usuario
 
     return checker

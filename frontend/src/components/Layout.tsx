@@ -49,7 +49,7 @@ export default function Layout({ subtitulo, grupos, contexto, derecha, children 
           <Avatar nombre={usuario.nombre} />
           <div>
             <strong>{usuario.nombre}</strong>
-            <small>{ROL[usuario.rol]}</small>
+            <small>{usuario.soporte ? "Soporte AviSmart" : ROL[usuario.rol]}</small>
           </div>
           <button
             className="icon-btn"

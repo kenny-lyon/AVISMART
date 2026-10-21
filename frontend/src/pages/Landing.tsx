@@ -120,7 +120,7 @@ export default function Landing() {
               <p className="pf-eyebrow"><span/>Información que sí ayuda</p>
               <h2>Del cuaderno a una visión completa de la campaña.</h2>
               <p>Los datos del engorde suelen quedar separados entre hojas, mensajes y personas. AviSmart los organiza alrededor de tus galpones para que producción y sanidad trabajen con la misma información.</p>
-              <ul className="pf-checks"><li>Historial diario sin registros duplicados.</li><li>Curvas Ross y Cobb para comparar el peso.</li><li>Alertas que conservan su seguimiento.</li><li>Cierre productivo y económico de la campaña.</li></ul>
+              <ul className="pf-checks"><li>Historial diario sin registros duplicados.</li><li>Curvas Ross 308, Cobb 500, Hubbard y Arbor Acres para comparar el peso.</li><li>Alertas que conservan su seguimiento.</li><li>Cierre productivo y económico de la campaña.</li></ul>
               {/* DEMO oculto por ahora: <Link className="pf-text-link" to="/contacto">Conocer AviSmart con una demo <span>→</span></Link> */}
               <Link className="pf-text-link" to={entrar}>{usuario ? "Ir al panel" : "Iniciar sesión"} <span>→</span></Link>
             </div>
