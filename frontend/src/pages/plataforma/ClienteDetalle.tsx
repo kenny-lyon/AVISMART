@@ -3,7 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, avisarCambios, fecha, ROLES_CLIENTE, type Organizacion } from "../../api";
 import { useAuth } from "../../auth";
 import Cuentas from "../../components/Cuentas";
-import { Campo, DrawerForm, Estado, Icon, PageHeader, mensajeError, useToast } from "../../components/ui";
+import { TablaAccesos, type Acceso } from "../../components/MiCuenta";
+import { Campo, DrawerForm, Estado, Icon, PageHeader, Panel, mensajeError, useToast } from "../../components/ui";
 
 type Eliminado = { respaldo: string; exportacion: string; datos: unknown };
 
@@ -23,6 +24,7 @@ export default function ClienteDetalle() {
   const avisar = useToast();
   const { entrarSoporte } = useAuth();
   const [cliente, setCliente] = useState<Organizacion | null>(null);
+  const [accesos, setAccesos] = useState<Acceso[]>([]);
   const [error, setError] = useState("");
   const [eliminar, setEliminar] = useState(false);
   const [confirmacion, setConfirmacion] = useState("");
@@ -31,6 +33,7 @@ export default function ClienteDetalle() {
 
   async function cargar() {
     setCliente(await api<Organizacion>(`/plataforma/organizaciones/${id}`));
+    api<Acceso[]>(`/plataforma/organizaciones/${id}/accesos`).then(setAccesos).catch(() => undefined);
   }
 
   useEffect(() => {
@@ -145,6 +148,10 @@ export default function ClienteDetalle() {
         titulo="Personal del cliente"
         descripcion="El productor principal se crea junto con el cliente. Aquí puedes agregar operarios y médicos veterinarios; cada alta genera una clave temporal. El productor también puede agregar a su personal."
       />
+
+      <Panel titulo="Últimos accesos" descripcion="Ingresos y cambios de clave del personal del cliente. Sirve para revisar un acceso que la persona no reconoce." sinPadding>
+        <TablaAccesos accesos={accesos} conPersona />
+      </Panel>
 
       <DrawerForm
         abierto={eliminar}

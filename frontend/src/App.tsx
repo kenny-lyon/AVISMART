@@ -24,6 +24,7 @@ import Propietario from "./pages/Propietario";
 import Registro from "./pages/Registro";
 import Alimentacion from "./pages/Alimentacion";
 import Sanidad from "./pages/Sanidad";
+import Bajas from "./pages/Bajas";
 import Servicios from "./pages/Servicios";
 
 function Cargando() {
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/registro" element={<Registro />} />
         <Route path="/alimentacion" element={<Alimentacion />} />
         <Route path="/sanidad" element={<Sanidad />} />
+        <Route path="/bajas" element={<Bajas />} />
         <Route path="/camara" element={<Camara />} />
         <Route path="/alertas" element={<Alertas />} />
         <Route path="/lotes" element={<Lotes />} />

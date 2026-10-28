@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from . import catalogo
-from .models import Alerta, Configuracion, FaseAlimento, Galpon, Granja, LecturaAmbiental, Lote, RegistroDiario, Tratamiento, Vacunacion
+from .models import Alerta, Configuracion, FaseAlimento, Galpon, Granja, LecturaAmbiental, Lote, RegistroDiario, RevisionBajas, Tratamiento, Vacunacion
 
 CURVAS = {
     # Peso vivo objetivo (g) de aves mixtas (as-hatched), según el manual de cada línea.
@@ -244,6 +244,8 @@ def indicadores(db: Session, lote: Lote) -> dict:
         .order_by(RegistroDiario.fecha.asc())
         .all()
     )
+    # Dictamen del veterinario sobre las bajas de cada día (para la tabla «Últimos días»).
+    revisiones = {v.registro_id: v.dictamen for v in db.query(RevisionBajas).filter(RevisionBajas.lote_id == lote.id)}
     muertes = sum(r.mortalidad for r in registros)
     aves = max(lote.poblacion_inicial - muertes, 0)
     mortalidad_pct = (muertes / lote.poblacion_inicial * 100) if lote.poblacion_inicial else 0
@@ -311,6 +313,8 @@ def indicadores(db: Session, lote: Lote) -> dict:
                 "humedad": lectura.humedad,
                 "origen": lectura.origen,
                 "fecha_hora": lectura.fecha_hora.isoformat(timespec="minutes"),
+                "temp_exterior": lectura.temp_exterior,
+                "humedad_exterior": lectura.humedad_exterior,
             }
             if lectura
             else None
@@ -324,6 +328,7 @@ def indicadores(db: Session, lote: Lote) -> dict:
                 "alimento_kg": r.alimento_kg,
                 "agua_l": r.agua_l,
                 "peso_muestra_g": r.peso_muestra_g,
+                "revision": revisiones.get(r.id),
             }
             for r in reversed(registros[-8:])
         ],

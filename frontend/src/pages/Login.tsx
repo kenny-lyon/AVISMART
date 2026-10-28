@@ -47,7 +47,7 @@ export default function Login() {
           <p className="hint">Acceso privado para personal autorizado de la granja avícola.</p>
           {error && <div className="error">{error}</div>}
           <label>Correo</label>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" required />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="username" maxLength={160} required />
           <CampoClave id="clave" label="Clave" value={password} onChange={setPassword} autoComplete="current-password" />
           <p className="olvide"><Link to="/olvide-clave">¿Olvidaste tu clave?</Link></p>
           <button className="btn full" disabled={cargando}>

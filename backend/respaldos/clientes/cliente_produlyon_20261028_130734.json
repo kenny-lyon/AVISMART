@@ -1,0 +1,46 @@
+{
+  "sistema": "AviSmart",
+  "tipo": "exportacion_de_cliente",
+  "exportado_en": "2026-10-28T13:07:34",
+  "cliente": {
+    "id": 4,
+    "nombre": "produlyon",
+    "estado": "ACTIVA",
+    "creada_en": "2026-10-28T13:00:39.049876",
+    "solicitud_id": 5,
+    "telegram_chat_id": null,
+    "telegram_chat_nombre": null,
+    "telegram_vinculado_en": null
+  },
+  "tablas": {
+    "alertas": [],
+    "adjuntos_lote": [],
+    "fases_alimento": [],
+    "cambios_alimento": [],
+    "revisiones_bajas": [],
+    "registros_diarios": [],
+    "vacunaciones": [],
+    "tratamientos": [],
+    "cierres_lote": [],
+    "lecturas_ambientales": [],
+    "lotes": [],
+    "galpones": [],
+    "granjas": [],
+    "accesos_usuario": [],
+    "usuarios": [
+      {
+        "id": 11,
+        "nombre": "kenny lyon lyon",
+        "email": "superperrito321@gmail.com",
+        "rol": "PRODUCTOR",
+        "activo": 1,
+        "debe_cambiar_clave": 1,
+        "version_sesion": 0,
+        "organizacion_id": 4,
+        "telefono": "931113015",
+        "correo_alterno": null
+      }
+    ],
+    "configuracion": []
+  }
+}

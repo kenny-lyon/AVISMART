@@ -43,8 +43,10 @@ def generar_pdf(lote, cierre, panel, registros, vacunas, tratamientos, alertas) 
     tabla = Table(resumen, colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
     tabla.setStyle(_estilo_tabla())
     elementos.extend([tabla, Spacer(1, 5 * mm), Paragraph("Recepción de pollitos", estilos["Heading2"])])
-    tabla = Table(_recepcion_filas(lote), colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
+    filas = _recepcion_filas(lote)
+    tabla = Table(filas, colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
     tabla.setStyle(_estilo_tabla())
+    tabla.setStyle([("SPAN", (1, len(filas) - 1), (3, len(filas) - 1))])  # la fila de evidencias ocupa todo el ancho
     elementos.extend([tabla])
     if lote.observaciones:
         elementos.append(Paragraph(f"Observaciones de la recepción: {lote.observaciones}", estilos["BodyText"]))
@@ -128,7 +130,19 @@ def _recepcion_filas(lote) -> list[list]:
         ["Alojados en el galpón", lote.poblacion_inicial, "Peso al llegar", _o(lote.peso_llegada_g, " g")],
         ["Precio por pollito", _dinero(lote.precio_pollito) if lote.precio_pollito is not None else "—", "Costo de pollitos", _o(costo)],
         ["Meta de peso", _o(lote.peso_objetivo_g, " g"), "Edad de saca prevista", _o(lote.edad_saca_dias, " días")],
+        ["Evidencias adjuntas", _evidencias(lote), "", ""],
     ]
+
+
+def _evidencias(lote) -> str:
+    """Resumen de las evidencias de la apertura (guía, certificados, fotos)."""
+    from sqlalchemy.orm import object_session
+
+    from .evidencias import resumen
+
+    sesion = object_session(lote)
+    filas = resumen(sesion, lote.id) if sesion is not None else []
+    return "; ".join(f"{nombre} ({cantidad})" for nombre, cantidad in filas) or "—"
 
 
 def _estilo_tabla(encabezado: bool = False):

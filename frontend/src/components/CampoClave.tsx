@@ -1,7 +1,32 @@
 import { useState } from "react";
+import { Ayuda } from "./ui";
 
-/** Campo de clave con botón para mostrarla y aviso de Bloq Mayús activado. */
-export default function CampoClave({ id, label, value, onChange, autoComplete, minLength, autoFocus }: {
+/** Tope: el largo de las claves que sugiere Google Chrome (las temporales de AviSmart tienen 14). */
+export const CLAVE_MIN = 8;
+export const CLAVE_MAX = 15;
+
+/** Reglas de una clave nueva (las mismas que valida el servidor), con el mensaje de cada falla.
+ *  Las que no tienen `texto` se validan pero no se muestran en el tooltip. */
+const REGLAS: { texto: string; falla: (c: string) => boolean; error: string }[] = [
+  { texto: `Entre ${CLAVE_MIN} y ${CLAVE_MAX} caracteres`, falla: (c) => c.length < CLAVE_MIN, error: `Te faltan caracteres: usa al menos ${CLAVE_MIN}.` },
+  {
+    texto: "Letras, números y símbolos (por ejemplo # . - @)",
+    falla: (c) => !/\p{L}/u.test(c) || !/\d/.test(c) || !/[^\p{L}\d\s]/u.test(c),
+    error: "Combina letras, números y al menos un símbolo (por ejemplo # . - @).",
+  },
+  { texto: "Al menos 5 caracteres distintos", falla: (c) => new Set(c.toLowerCase()).size < 5, error: "Usa al menos 5 caracteres distintos." },
+  { texto: "", falla: (c) => /(.)\1{3}/u.test(c), error: "No repitas el mismo carácter más de 3 veces seguidas." },
+  { texto: "", falla: (c) => c !== c.trim(), error: "Quita los espacios del inicio o del final." },
+];
+
+/** Primer problema de la clave nueva, o null si cumple todo. */
+export function problemaClave(clave: string): string | null {
+  return REGLAS.find((r) => r.falla(clave))?.error ?? null;
+}
+
+/** Campo de clave con botón para mostrarla y aviso de Bloq Mayús activado.
+ *  Con `reglas`, muestra los requisitos en un tooltip y, si la clave no los cumple, el error en rojo debajo. */
+export default function CampoClave({ id, label, value, onChange, autoComplete, minLength, autoFocus, reglas = false }: {
   id: string;
   label: string;
   value: string;
@@ -9,9 +34,12 @@ export default function CampoClave({ id, label, value, onChange, autoComplete, m
   autoComplete: "current-password" | "new-password";
   minLength?: number;
   autoFocus?: boolean;
+  reglas?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const [mayusculas, setMayusculas] = useState(false);
+  const [tocado, setTocado] = useState(false);
+  const error = reglas && tocado && value ? problemaClave(value) : null;
 
   function revisarMayusculas(e: React.KeyboardEvent<HTMLInputElement>) {
     setMayusculas(e.getModifierState?.("CapsLock") ?? false);
@@ -19,7 +47,14 @@ export default function CampoClave({ id, label, value, onChange, autoComplete, m
 
   return (
     <>
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id} className={reglas ? "label-con-ayuda" : undefined}>
+        {label}
+        {reglas && (
+          <Ayuda titulo="Requisitos de la clave" arriba>
+            <ul className="requisitos-clave">{REGLAS.filter((r) => r.texto).map((r) => <li key={r.texto}>{r.texto}</li>)}</ul>
+          </Ayuda>
+        )}
+      </label>
       <div className="campo-clave">
         <input
           id={id}
@@ -28,13 +63,16 @@ export default function CampoClave({ id, label, value, onChange, autoComplete, m
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={revisarMayusculas}
           onKeyUp={revisarMayusculas}
-          onBlur={() => setMayusculas(false)}
+          onBlur={() => { setMayusculas(false); setTocado(true); }}
           autoComplete={autoComplete}
           minLength={minLength}
+          maxLength={autoComplete === "new-password" ? CLAVE_MAX : 128}
           autoFocus={autoFocus}
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id}-error` : undefined}
           required
         />
         <button
@@ -55,6 +93,7 @@ export default function CampoClave({ id, label, value, onChange, autoComplete, m
         </button>
       </div>
       {mayusculas && <p className="aviso-mayus" role="status">Bloq Mayús está activado</p>}
+      {error && <p className="error-clave" id={`${id}-error`} role="alert">{error}</p>}
     </>
   );
 }

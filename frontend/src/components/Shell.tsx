@@ -7,7 +7,7 @@ import Layout, { type NavGrupo } from "./Layout";
 import { Icon, Panel, Vacio } from "./ui";
 
 /** Pantallas que necesitan un lote elegido para mostrar algo. */
-const NECESITAN_LOTE = ["/panel", "/registro", "/sanidad", "/alimentacion", "/camara"];
+const NECESITAN_LOTE = ["/panel", "/registro", "/sanidad", "/bajas", "/alimentacion", "/camara"];
 
 function SinLotes({ puedeConfigurar }: { puedeConfigurar: boolean }) {
   return (
@@ -55,11 +55,33 @@ function FranjaSoporte({ cliente }: { cliente: { id: number; nombre: string } })
   );
 }
 
+/** El recordatorio de datos de contacto se puede cerrar: vuelve a aparecer después de 24 horas. */
+const HORAS_RECORDATORIO = 24;
+const claveRecordatorio = (id: number) => `avismart_recordatorio_contacto_${id}`;
+
+function recordatorioPospuesto(id: number) {
+  try {
+    const hasta = Number(localStorage.getItem(claveRecordatorio(id)) ?? 0);
+    return Date.now() < hasta;
+  } catch {
+    return false;
+  }
+}
+
+function posponerRecordatorio(id: number) {
+  try {
+    localStorage.setItem(claveRecordatorio(id), String(Date.now() + HORAS_RECORDATORIO * 3600 * 1000));
+  } catch {
+    /* sin almacenamiento local: se vuelve a mostrar en la próxima carga */
+  }
+}
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   const { usuario } = useAuth();
   const { resumen, loteId, elegir } = useLote();
   const { pathname } = useLocation();
   const [abiertas, setAbiertas] = useState(0);
+  const [, setPospuesto] = useState(0);
 
   useEffect(() => {
     const contar = () =>
@@ -92,6 +114,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       titulo: "Sanidad y alimento",
       items: [
         { to: "/sanidad", label: "Vacunas y tratamientos", icono: "sanidad" },
+        { to: "/bajas", label: "Revisión de bajas", icono: "ave" },
         { to: "/alimentacion", label: "Alimentación", icono: "alimento" },
       ],
     },
@@ -105,12 +128,13 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       ],
     });
   }
-  if (puede("ADMIN", "PRODUCTOR", "VETERINARIO")) {
-    grupos.push({
-      titulo: "Ajustes",
-      items: [{ to: "/config", label: puede("VETERINARIO") ? "Parámetros de alerta" : "Personal y ajustes", icono: "config" }],
-    });
-  }
+  grupos.push({
+    titulo: "Ajustes",
+    items: [{ to: "/config", label: puede("VETERINARIO") ? "Parámetros y cuenta" : puede("OPERARIO") ? "Mi cuenta" : "Personal y ajustes", icono: "config" }],
+  });
+  // El productor es la cuenta principal del cliente: se le pide completar su contacto de respaldo.
+  const faltaContacto =
+    rol === "PRODUCTOR" && !usuario.soporte && (!usuario.telefono || !usuario.correo_alterno) && pathname !== "/config" && !recordatorioPospuesto(usuario.id);
 
   return (
     <Layout
@@ -144,6 +168,24 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       }
     >
       {usuario.soporte && usuario.organizacion && <FranjaSoporte cliente={usuario.organizacion} />}
+      {faltaContacto && (
+        <div className="aviso info aviso-cerrable">
+          <Icon name="cuentas" />
+          <span>
+            Completa tu <b>celular con WhatsApp</b> y un <b>correo de respaldo</b>. Los usamos solo para verificar que eres tú si alguna vez pierdes el acceso.{" "}
+            <Link to="/config?pestana=cuenta">Completar ahora</Link>
+          </span>
+          <button
+            type="button"
+            className="aviso-cerrar"
+            aria-label="Recordármelo más tarde"
+            title="Recordármelo más tarde"
+            onClick={() => { posponerRecordatorio(usuario.id); setPospuesto((n) => n + 1); }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {sinLotes ? <SinLotes puedeConfigurar={puede("ADMIN", "PRODUCTOR")} /> : children}
     </Layout>
   );

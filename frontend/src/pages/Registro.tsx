@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { api, fecha, hoyLocal, num, type Panel as PanelLote } from "../api";
 import { Campo, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import { valorCampo } from "../textos";
+import { ZonaEvidencia, type Adjunto, type Seccion as SeccionEvidencia } from "../components/Evidencias";
 
 const VACIO = { mortalidad: "", alimento: "", agua: "", peso: "" };
 const FASES = ["Preinicio", "Inicio", "Crecimiento", "Acabado", "Retiro"];
@@ -18,6 +20,17 @@ export default function Registro() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState<{ fecha: string; alertas: { mensaje: string; tipo: string }[] } | null>(null);
+  // Evidencias opcionales: se suben al elegirlas y se vinculan al registro al guardar.
+  const [evidencias, setEvidencias] = useState<Adjunto[]>([]);
+  const zona = (seccion: SeccionEvidencia, ayuda: string) => (
+    <ZonaEvidencia
+      seccion={seccion}
+      ayuda={ayuda}
+      archivos={evidencias.filter((a) => a.seccion === seccion)}
+      ruta="/adjuntos/temporales"
+      onCambio={(lista) => setEvidencias([...evidencias.filter((a) => a.seccion !== seccion), ...lista])}
+    />
+  );
 
   async function cargar() {
     if (!loteId) return;
@@ -45,11 +58,13 @@ export default function Registro() {
           agua_l: Number(datos.agua),
           peso_muestra_g: Number(datos.peso),
           fase_alimento: fase || panel?.alimento_hoy?.nombre || "",
+          adjuntos: evidencias.map((a) => a.id),
         }),
       });
       setResultado({ fecha: dia, alertas: data.alertas });
       setDatos(VACIO);
       setFase("");
+      setEvidencias([]);
       avisar(data.alertas.length ? `Registro guardado con ${data.alertas.length} alerta(s).` : "Registro guardado.");
       await Promise.all([recargar(), cargar()]);
     } catch (err) {
@@ -62,7 +77,7 @@ export default function Registro() {
   if (!panel) return <p className="muted">{error || "Cargando el lote…"}</p>;
   const anterior = panel.registros[0];
   const cerrado = panel.lote.estado !== "ACTIVO";
-  const set = (k: keyof typeof VACIO) => (e: React.ChangeEvent<HTMLInputElement>) => setDatos({ ...datos, [k]: e.target.value });
+  const set = (k: keyof typeof VACIO) => (e: React.ChangeEvent<HTMLInputElement>) => setDatos({ ...datos, [k]: valorCampo(e) });
   const yaRegistrado = panel.registros.some((r) => r.fecha === dia);
 
   return (
@@ -101,6 +116,7 @@ export default function Registro() {
                   <Campo label="Aves muertas" ayuda={`Alerta si supera ${panel.umbral_mortalidad} aves.`}>
                     <input type="number" min="0" max={panel.aves_vivas} inputMode="numeric" value={datos.mortalidad} onChange={set("mortalidad")} placeholder={anterior ? `Anterior: ${anterior.mortalidad}` : "0"} required />
                   </Campo>
+                  {zona("BAJAS", "Foto de las aves muertas del día, por ejemplo en la bandeja de bajas, o de la hoja donde se anotaron. Sirve al veterinario para revisar la causa.")}
                 </Seccion>
                 <Seccion titulo="3. Consumo">
                   <Campo
@@ -118,11 +134,13 @@ export default function Registro() {
                   <Campo label="Agua (L)">
                     <input type="number" min="0" max={Math.floor(panel.aves_vivas * 0.8 + 1)} step="0.1" inputMode="decimal" value={datos.agua} onChange={set("agua")} placeholder={anterior ? `Anterior: ${num(anterior.agua_l, 1)}` : ""} required />
                   </Campo>
+                  {zona("CONSUMO", "Foto de los sacos de alimento usados, de la balanza o de la lectura del medidor de agua.")}
                 </Seccion>
                 <Seccion titulo="4. Pesaje">
                   <Campo label="Peso promedio por ave (g)" ayuda={`Pesa un grupo de pollos (por ejemplo 50), suma los gramos y divide entre la cantidad. Para hoy la curva ${panel.lote.linea} espera cerca de ${num(panel.peso_esperado_g)} g.`}>
                     <input type="number" min="25" max="6000" step="1" inputMode="numeric" value={datos.peso} onChange={set("peso")} placeholder={`≈ ${Math.round(panel.peso_esperado_g)}`} required />
                   </Campo>
+                  {zona("PESAJE", "Foto de la balanza con el grupo de pollos pesado o de la hoja de pesaje.")}
                 </Seccion>
               </div>
               <div className="form-pie">

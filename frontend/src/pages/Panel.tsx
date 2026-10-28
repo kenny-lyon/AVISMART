@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, fecha, num, type Panel } from "../api";
+import { api, fecha, num, type ClimaExterior, type Panel } from "../api";
 import { useAuth } from "../auth";
 import { Ayuda, Campo, DrawerForm, Icon, PageHeader, Panel as Caja, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import { valorCampo } from "../textos";
+
+const DICTAMEN: Record<string, string> = { NORMAL: "Normal", VISITA: "Visita programada", BROTE: "Posible brote" };
 
 export default function PanelPage() {
   const { usuario } = useAuth();
@@ -15,6 +18,7 @@ export default function PanelPage() {
   const [temp, setTemp] = useState("");
   const [humedad, setHumedad] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [exterior, setExterior] = useState<ClimaExterior | null>(null);
 
   async function cargar() {
     if (!loteId) return;
@@ -23,6 +27,9 @@ export default function PanelPage() {
 
   useEffect(() => {
     cargar().catch((err) => setError(mensajeError(err)));
+    // El clima de la zona llega aparte: si el servicio externo tarda, el panel no espera.
+    setExterior(null);
+    if (loteId) api<ClimaExterior>(`/lotes/${loteId}/clima-exterior`).then(setExterior).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loteId]);
 
@@ -231,6 +238,7 @@ export default function PanelPage() {
             ) : (
               <p className="muted" style={{ margin: 0 }}>Todavía no hay lecturas del galpón.</p>
             )}
+            <ClimaZona exterior={exterior} lectura={panel.lectura} tmin={panel.temp_min} tmax={panel.temp_max} />
           </Caja>
         </div>
       </div>
@@ -248,13 +256,22 @@ export default function PanelPage() {
           <div className="tabla-wrap">
             <table>
               <thead>
-                <tr><th>Fecha</th><th>Bajas</th><th>Alimento (kg)</th><th>Agua (L)</th><th>Peso (g)</th></tr>
+                <tr><th>Fecha</th><th>Bajas</th><th>Revisión del veterinario</th><th>Alimento (kg)</th><th>Agua (L)</th><th>Peso (g)</th></tr>
               </thead>
               <tbody>
                 {panel.registros.map((row) => (
                   <tr key={row.id}>
                     <td>{fecha(row.fecha)}</td>
                     <td className="num">{row.mortalidad > panel.umbral_mortalidad ? <b style={{ color: "var(--riesgo)" }}>{row.mortalidad}</b> : row.mortalidad}</td>
+                    <td>
+                      {row.mortalidad === 0 ? (
+                        <span className="muted">—</span>
+                      ) : (
+                        <Link to="/bajas" className={`dictamen ${(row.revision ?? "pendiente").toLowerCase()}`}>
+                          {DICTAMEN[row.revision ?? ""] ?? "Por revisar"}
+                        </Link>
+                      )}
+                    </td>
                     <td className="num">{num(row.alimento_kg, 1)}</td>
                     <td className="num">{num(row.agua_l, 1)}</td>
                     <td className="num">{num(row.peso_muestra_g)}</td>
@@ -277,15 +294,123 @@ export default function PanelPage() {
         error={error}
       >
         <Seccion titulo="Lectura">
+          {exterior?.disponible && (
+            <div className="clima-afuera">
+              <p>
+                Afuera ahora: <b>{num(exterior.temperatura, 1)} °C · {num(exterior.humedad)} %</b>.{" "}
+                {comparacionRango(exterior.temperatura, exterior.humedad, panel.temp_min, panel.temp_max)} Se guarda junto a tu lectura.
+              </p>
+              <button
+                type="button"
+                className="btn small secondary"
+                title="Para cuando el galpón está abierto y adentro se mide lo mismo que afuera"
+                onClick={() => { setTemp(String(exterior.temperatura)); setHumedad(String(Math.round(exterior.humedad))); }}
+              >
+                Usar el clima de afuera
+              </button>
+            </div>
+          )}
           <Campo label="Temperatura (°C)">
-            <input type="number" step="0.1" min="-10" max="50" value={temp} onChange={(e) => setTemp(e.target.value)} required />
+            <input type="number" step="0.1" min="-10" max="50" value={temp} onChange={(e) => setTemp(valorCampo(e))} required />
           </Campo>
           <Campo label="Humedad (%)">
-            <input type="number" step="1" min="0" max="100" value={humedad} onChange={(e) => setHumedad(e.target.value)} required />
+            <input type="number" step="1" min="0" max="100" value={humedad} onChange={(e) => setHumedad(valorCampo(e))} required />
           </Campo>
         </Seccion>
+        {exterior?.disponible && (
+          <Seccion titulo="Clima de la zona">
+            <MapaClima clima={exterior} />
+          </Seccion>
+        )}
       </DrawerForm>
     </>
+  );
+}
+
+/** Si el clima de afuera ya está en el rango ideal del día, el galpón puede ventilarse de forma natural. */
+function comparacionRango(temp: number, humedad: number, tmin: number, tmax: number) {
+  const t = temp < tmin ? "más frío" : temp > tmax ? "más caliente" : "";
+  const h = humedad < 50 ? "más seco" : humedad > 70 ? "más húmedo" : "";
+  if (!t && !h) return `Está dentro del rango ideal de hoy (${num(tmin)}–${num(tmax)} °C, 50–70 %): con cortinas abiertas el galpón puede quedar igual.`;
+  return `Afuera está ${[t, h].filter(Boolean).join(" y ")} que el rango ideal de hoy (${num(tmin)}–${num(tmax)} °C, 50–70 %).`;
+}
+
+const CAPAS = [
+  { id: "temp", nombre: "Temperatura" },
+  { id: "wind", nombre: "Viento" },
+  { id: "rh", nombre: "Humedad" },
+];
+
+const RUMBOS = ["norte", "noreste", "este", "sureste", "sur", "suroeste", "oeste", "noroeste"];
+
+/** Valor en la granja de la capa que se está viendo en el mapa. */
+function valorEnGranja(capa: string, c: Extract<ClimaExterior, { disponible: true }>) {
+  if (capa === "wind") return `Viento de ${num(c.viento_kmh, 1)} km/h que viene del ${RUMBOS[Math.round(c.viento_direccion / 45) % 8]}`;
+  if (capa === "rh") return `Humedad de ${num(c.humedad)} %`;
+  return `Temperatura de ${num(c.temperatura, 1)} °C`;
+}
+
+/** Mapa de Windy centrado en la granja: muestra cómo se mueven las masas de aire frío o caliente. */
+function MapaClima({ clima }: { clima: Extract<ClimaExterior, { disponible: true }> }) {
+  const [capa, setCapa] = useState("temp");
+  // Cambiar la clave vuelve a cargar el mapa en las coordenadas de la granja.
+  const [vista, setVista] = useState(0);
+  const { latitud: lat, longitud: lon } = clima;
+  const src =
+    "https://embed.windy.com/embed.html?type=map&location=coordinates&metricRain=mm&metricTemp=%C2%B0C&metricWind=km%2Fh" +
+    `&zoom=10&overlay=${capa}&product=ecmwf&level=surface&lat=${lat}&lon=${lon}&detailLat=${lat}&detailLon=${lon}&marker=true&message=true`;
+  return (
+    <div className="mapa-clima">
+      <div className="mapa-clima-barra">
+        <div className="mapa-clima-capas" role="tablist">
+          {CAPAS.map((c) => (
+            <button key={c.id} type="button" role="tab" aria-selected={capa === c.id} className={capa === c.id ? "activa" : ""} onClick={() => setCapa(c.id)}>
+              {c.nombre}
+            </button>
+          ))}
+        </div>
+        <button type="button" className="btn small secondary" onClick={() => setVista((v) => v + 1)}>
+          <Icon name="ubicacion" size={15} /> Centrar en la granja
+        </button>
+      </div>
+      <p className="mapa-clima-valor">
+        <b>En la granja ahora:</b> {valorEnGranja(capa, clima)}
+        <span>{lat.toFixed(5)}, {lon.toFixed(5)}</span>
+      </p>
+      <iframe key={`${vista}-${capa}`} title="Mapa del clima de la zona" src={src} loading="lazy" />
+      <small className="muted">El punto marca la granja. Las líneas animadas muestran hacia dónde se mueve el aire. Fuente: Windy (modelo ECMWF).</small>
+    </div>
+  );
+}
+
+/** Clima de la zona frente al galpón y aviso de noche fría o helada para las próximas 24 horas. */
+function ClimaZona({ exterior, lectura, tmin, tmax }: { exterior: ClimaExterior | null; lectura: Panel["lectura"]; tmin: number; tmax: number }) {
+  if (!exterior) return <p className="muted clima-zona-nota">Consultando el clima de la zona…</p>;
+  if (!exterior.disponible) return <p className="muted clima-zona-nota">{exterior.motivo}</p>;
+  const hora = (iso: string) => iso.slice(11, 16);
+  // Se compara con el clima que había afuera cuando se tomó la lectura; si no se guardó, con el actual.
+  const diferencia = lectura ? lectura.temperatura - (lectura.temp_exterior ?? exterior.temperatura) : null;
+  const helada = exterior.minima <= 0;
+  const fria = exterior.minima < 5;
+  return (
+    <div className="clima-zona">
+      <div className="clima-zona-fila">
+        <span>Afuera ahora{exterior.ubicacion ? ` · ${exterior.ubicacion.split(",")[0]}` : ""}</span>
+        <b>{num(exterior.temperatura, 1)} °C · {num(exterior.humedad)} %</b>
+      </div>
+      {diferencia !== null && (
+        <div className="clima-zona-fila">
+          <span>Galpón frente a la zona</span>
+          <b>{Math.abs(diferencia) < 1 ? "Igual que afuera" : diferencia > 0 ? `${num(diferencia, 1)} °C más cálido` : `${num(-diferencia, 1)} °C más frío`}</b>
+        </div>
+      )}
+      <p className="clima-zona-rango">{comparacionRango(exterior.temperatura, exterior.humedad, tmin, tmax)}</p>
+      <p className={`clima-zona-pronostico${fria ? " fria" : ""}`}>
+        Próximas 24 h afuera: mínima <b>{num(exterior.minima, 1)} °C</b> a las {hora(exterior.hora_minima)} y máxima {num(exterior.maxima, 1)} °C a las {hora(exterior.hora_maxima)}.
+        {helada ? " Helada prevista: revisa criadoras, gas y cortinas antes de la madrugada." : fria ? " Noche fría: revisa criadoras y cortinas antes de la madrugada." : ""}
+      </p>
+      <small className="muted">Clima de la zona: Open-Meteo</small>
+    </div>
   );
 }
 

@@ -17,13 +17,16 @@ Antes de cambiar nada guarda una copia de la base en backend/respaldos/.
 """
 import random
 import shutil
+import uuid
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 from .baja_cliente import _consultas
+from .evidencias import carpeta as carpeta_adjuntos
 from .db import DB_PATH, SessionLocal
 from .logic import evaluar_clima, evaluar_registro, fase_del_dia, peso_esperado, plan_alimento, rango_temperatura
 from .models import (
+    AdjuntoLote,
     Alerta,
     CambioAlimento,
     CierreLote,
@@ -34,6 +37,7 @@ from .models import (
     Lote,
     Organizacion,
     RegistroDiario,
+    RevisionBajas,
     Tratamiento,
     Usuario,
     Vacunacion,
@@ -150,6 +154,69 @@ def _atender_alertas(db, lote: Lote, hasta: date, productor: Usuario, veterinari
             alerta.atendida_por = (veterinario if alerta.requiere_veterinario else productor).id
 
 
+def _revisar_bajas(db, lote: Lote, hasta: date, veterinario: Usuario):
+    """Dictamen del veterinario en los días con bajas hasta `hasta`; los más recientes quedan por revisar."""
+    for registro in db.query(RegistroDiario).filter(RegistroDiario.lote_id == lote.id, RegistroDiario.fecha <= hasta, RegistroDiario.mortalidad > 0):
+        dia = (registro.fecha - lote.fecha_ingreso).days
+        brote = registro.mortalidad > 20
+        causa = ("Enfermedad respiratoria" if brote else "Onfalitis o mala calidad del pollito" if dia <= 7
+                 else "Muerte súbita" if dia <= 21 else "Síndrome ascítico (mal de altura)")
+        db.add(RevisionBajas(
+            registro_id=registro.id, lote_id=lote.id, veterinario_id=veterinario.id,
+            dictamen="BROTE" if brote else "NORMAL", causa=causa,
+            observaciones="Necropsia de 5 aves: lesiones compatibles con colibacilosis. Se indica Enrofloxacina por 5 días." if brote else "",
+            creada_en=_momento(registro.fecha, 17, 30),
+        ))
+
+
+def _pdf_demo(titulo: str, lineas: list[str]) -> bytes:
+    """PDF sencillo de una página, para las evidencias de ejemplo."""
+    from io import BytesIO
+
+    from reportlab.lib.pagesizes import A5
+    from reportlab.pdfgen import canvas
+
+    buffer = BytesIO()
+    hoja = canvas.Canvas(buffer, pagesize=A5)
+    hoja.setFont("Helvetica-Bold", 14)
+    hoja.drawString(40, 540, titulo)
+    hoja.setFont("Helvetica", 10)
+    for i, linea in enumerate(lineas):
+        hoja.drawString(40, 510 - i * 18, linea)
+    hoja.setFont("Helvetica-Oblique", 8)
+    hoja.drawString(40, 40, "Documento de ejemplo para la demostración de AviSmart.")
+    hoja.save()
+    return buffer.getvalue()
+
+
+def _evidencias_demo(db, lote: Lote, productor: Usuario) -> None:
+    """Guía de remisión y certificado de vacunación de la incubadora, como si los hubiera subido el productor."""
+    org = productor.organizacion_id
+    documentos = [
+        ("GUIA", f"guia_{lote.guia}.pdf", "GUÍA DE REMISIÓN " + (lote.guia or ""), [
+            f"Remitente: Incubadora {lote.proveedor}",
+            f"Fecha de traslado: {lote.fecha_ingreso:%d/%m/%Y}",
+            f"Bienes: {lote.cantidad_recibida} pollitos BB {lote.linea}, sexo {lote.sexo.lower()}",
+            "Destino: Granja avícola Santa Rosa, Juliaca (Puno)",
+        ]),
+        ("VACUNAS", "certificado_vacunacion.pdf", "CERTIFICADO DE VACUNACIÓN EN INCUBADORA", [
+            f"Lote: {lote.cantidad_recibida} pollitos {lote.linea} · {lote.fecha_ingreso:%d/%m/%Y}",
+            "Marek (HVT) · subcutánea",
+            "Newcastle + Bronquitis (B1 + H120) · spray",
+            "Firma: Médico veterinario de la incubadora",
+        ]),
+    ]
+    for seccion, nombre, titulo, lineas in documentos:
+        contenido = _pdf_demo(titulo, lineas)
+        ruta = f"org_{org}/{uuid.uuid4().hex}.pdf"
+        destino = carpeta_adjuntos() / ruta
+        destino.parent.mkdir(parents=True, exist_ok=True)
+        destino.write_bytes(contenido)
+        db.add(AdjuntoLote(organizacion_id=org, lote_id=lote.id, seccion=seccion, nombre=nombre, tipo="application/pdf",
+                           tamano=len(contenido), ruta=ruta, subido_por=productor.id,
+                           subido_en=datetime.combine(lote.fecha_ingreso, time(9, 30))))
+
+
 def preparar() -> None:
     hoy = date.today()
     respaldo = _respaldar()
@@ -169,9 +236,10 @@ def preparar() -> None:
 
         # Borra solo lo productivo de la organización (granjas, galpones, lotes y todo lo que cuelga de ellos).
         for nombre, consulta in _consultas(db, organizacion).items():
-            if nombre not in ("usuarios", "configuracion", "intentos_login", "intentos_recuperacion"):
+            if nombre not in ("usuarios", "configuracion", "intentos_login", "intentos_recuperacion", "accesos_usuario"):
                 consulta.delete(synchronize_session=False)
         db.flush()
+        shutil.rmtree(carpeta_adjuntos() / f"org_{organizacion.id}", ignore_errors=True)
 
         granja = Granja(
             nombre="Granja avícola Santa Rosa",
@@ -228,6 +296,8 @@ def preparar() -> None:
         anterior.estado = "CERRADO"
         anterior.fecha_cierre = fecha_faena
         _atender_alertas(db, anterior, fecha_faena, productor, veterinario)
+        _revisar_bajas(db, anterior, fecha_faena, veterinario)
+        _evidencias_demo(db, anterior, productor)
 
         # ---------------------------------------------------------------- campaña actual (día 40)
         ingreso = hoy - timedelta(days=40)
@@ -278,6 +348,8 @@ def preparar() -> None:
                            estado="VALIDADA", diagnostico="Colibacilosis: mortalidad alta el día 24 y lesiones en la necropsia.",
                            validado_por=veterinario.id))
         _atender_alertas(db, actual, hoy - timedelta(days=2), productor, veterinario)
+        _revisar_bajas(db, actual, hoy - timedelta(days=2), veterinario)
+        _evidencias_demo(db, actual, productor)
 
         db.commit()
         print(f"Respaldo previo: {respaldo}")

@@ -3,8 +3,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api, avisarCambios, fecha, type Organizacion, type SolicitudContacto, type Usuario } from "../../api";
 import { DrawerCredencial, type Credencial } from "../../components/Cuentas";
 import { Campo, DrawerForm, Estado, Icon, PageHeader, Panel, Seccion, Tabs, Vacio, mensajeError, useToast } from "../../components/ui";
+import { LARGO_NOMBRE, textoDe } from "../../textos";
 
-type Alta = { organizacion: Organizacion; usuario: Usuario; clave_temporal: string };
+type Alta = { organizacion: Organizacion; usuario: Usuario; clave_temporal: string; correo_enviado: boolean };
 
 export default function Clientes() {
   const location = useLocation();
@@ -18,6 +19,8 @@ export default function Clientes() {
     nombre: desde ? desde.empresa || desde.nombre : "",
     productorNombre: desde?.nombre ?? "",
     productorEmail: desde?.email ?? "",
+    productorTelefono: desde?.telefono ?? "",
+    productorRespaldo: "",
   });
   const [solicitudId, setSolicitudId] = useState<number | null>(desde?.id ?? null);
   const [creado, setCreado] = useState<{ id: number; titulo: string; datos: Credencial } | null>(null);
@@ -38,7 +41,7 @@ export default function Clientes() {
   function abrirNuevo() {
     setError("");
     setSolicitudId(null);
-    setForm({ nombre: "", productorNombre: "", productorEmail: "" });
+    setForm({ nombre: "", productorNombre: "", productorEmail: "", productorTelefono: "", productorRespaldo: "" });
     setNuevo(true);
   }
 
@@ -52,6 +55,8 @@ export default function Clientes() {
           nombre: form.nombre,
           productor_nombre: form.productorNombre,
           productor_email: form.productorEmail,
+          productor_telefono: form.productorTelefono,
+          productor_correo_alterno: form.productorRespaldo,
           solicitud_id: solicitudId,
         }),
       });
@@ -61,7 +66,7 @@ export default function Clientes() {
       setCreado({
         id: data.organizacion.id,
         titulo: `Cliente "${data.organizacion.nombre}" creado`,
-        datos: { email: data.usuario.email, clave: data.clave_temporal },
+        datos: { email: data.usuario.email, clave: data.clave_temporal, enviado: data.correo_enviado },
       });
       avisarCambios();
       await cargar();
@@ -145,15 +150,21 @@ export default function Clientes() {
       >
         <Seccion titulo="Organización">
           <Campo label="Nombre del cliente" ancho ayuda="Empresa o granja avícola.">
-            <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} required minLength={3} />
+            <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: textoDe(e, "lugar", form.nombre) })} required minLength={3} maxLength={LARGO_NOMBRE} />
           </Campo>
         </Seccion>
         <Seccion titulo="Productor responsable">
           <Campo label="Nombre completo" ancho>
-            <input value={form.productorNombre} onChange={(e) => setForm({ ...form, productorNombre: e.target.value })} required minLength={3} />
+            <input value={form.productorNombre} onChange={(e) => setForm({ ...form, productorNombre: textoDe(e, "persona", form.productorNombre) })} required minLength={3} maxLength={LARGO_NOMBRE} />
           </Campo>
           <Campo label="Correo" ancho ayuda="Con este correo entrará al sistema. Después podrás agregar a sus operarios y veterinarios.">
             <input type="email" value={form.productorEmail} onChange={(e) => setForm({ ...form, productorEmail: e.target.value })} required />
+          </Campo>
+          <Campo label="Celular con WhatsApp (opcional)" ayuda="Si falta, el productor lo completará al entrar.">
+            <input type="tel" inputMode="tel" maxLength={20} value={form.productorTelefono} onChange={(e) => setForm({ ...form, productorTelefono: e.target.value })} placeholder="987 654 321" />
+          </Campo>
+          <Campo label="Correo de respaldo (opcional)">
+            <input type="email" maxLength={160} value={form.productorRespaldo} onChange={(e) => setForm({ ...form, productorRespaldo: e.target.value })} placeholder="nombre@gmail.com" />
           </Campo>
         </Seccion>
       </DrawerForm>

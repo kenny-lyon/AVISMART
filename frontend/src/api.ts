@@ -18,6 +18,8 @@ export type Usuario = {
   organizacion: { id: number; nombre: string } | null;
   /** Cuenta de plataforma trabajando dentro de un cliente (modo soporte). */
   soporte?: boolean;
+  telefono?: string | null;
+  correo_alterno?: string | null;
 };
 
 export type Galpon = { id: number; nombre: string; capacidad: number; granja_id: number; granja: string };
@@ -170,8 +172,10 @@ export type Panel = {
     humedad: number;
     origen: string;
     fecha_hora: string;
+    temp_exterior: number | null;
+    humedad_exterior: number | null;
   } | null;
-  serie: { dia: number; esperado: number; peso: number | null; mortalidad: number | null }[];
+  serie:{ dia: number; esperado: number; peso: number | null; mortalidad: number | null }[];
   registros: {
     id: number;
     fecha: string;
@@ -179,6 +183,8 @@ export type Panel = {
     alimento_kg: number;
     agua_l: number;
     peso_muestra_g: number;
+    // Dictamen del veterinario sobre las bajas del día: NORMAL, VISITA o BROTE.
+    revision: string | null;
   }[];
   carencias: {
     id: number;
@@ -208,6 +214,24 @@ export type Camara = {
   ubicacion: string | null;
   lectura: { temperatura: number; humedad: number; fecha_hora: string } | null;
 };
+
+/** Clima de la zona de la granja (Open-Meteo) para comparar con el galpón. */
+export type ClimaExterior =
+  | { disponible: false; motivo: string }
+  | {
+      disponible: true;
+      ubicacion: string | null;
+      latitud: number;
+      longitud: number;
+      temperatura: number;
+      humedad: number;
+      viento_kmh: number;
+      viento_direccion: number;
+      minima: number;
+      hora_minima: string;
+      maxima: number;
+      hora_maxima: string;
+    };
 
 export type Tratamiento = {
   id: number;
@@ -286,7 +310,7 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   const token = leerToken();

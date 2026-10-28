@@ -44,6 +44,16 @@ def ensure_schema() -> None:
             conn.execute(text("ALTER TABLE galpones ADD COLUMN camara_modo VARCHAR(20) DEFAULT 'SIMULADA'"))
         if "camara_activa" not in cols:
             conn.execute(text("ALTER TABLE galpones ADD COLUMN camara_activa INTEGER DEFAULT 1"))
+        lectura_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(lecturas_ambientales)")).fetchall()}
+        for columna in ("temp_exterior", "humedad_exterior"):
+            if lectura_cols and columna not in lectura_cols:
+                conn.execute(text(f"ALTER TABLE lecturas_ambientales ADD COLUMN {columna} FLOAT"))
+        adjunto_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(adjuntos_lote)")).fetchall()}
+        if adjunto_cols and "registro_id" not in adjunto_cols:
+            conn.execute(text("ALTER TABLE adjuntos_lote ADD COLUMN registro_id INTEGER"))
+        acceso_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(accesos_usuario)")).fetchall()}
+        if acceso_cols and "organizacion_id" not in acceso_cols:
+            conn.execute(text("ALTER TABLE accesos_usuario ADD COLUMN organizacion_id INTEGER"))
         lote_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(lotes)")).fetchall()}
         if "fecha_cierre" not in lote_cols:
             conn.execute(text("ALTER TABLE lotes ADD COLUMN fecha_cierre DATE"))
@@ -136,6 +146,8 @@ def ensure_schema() -> None:
             ("tratamientos", "iniciado_por", "INTEGER REFERENCES usuarios(id)"),
             ("alertas", "tratamiento_id", "INTEGER REFERENCES tratamientos(id)"),
             ("registros_diarios", "fase_alimento", "VARCHAR(30)"),
+            ("usuarios", "telefono", "VARCHAR(20)"),
+            ("usuarios", "correo_alterno", "VARCHAR(160)"),
         ):
             columnas = {row[1] for row in conn.execute(text(f"PRAGMA table_info({tabla})")).fetchall()}
             if columnas and columna not in columnas:

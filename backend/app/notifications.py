@@ -21,7 +21,7 @@ from .models import Alerta, Organizacion
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 MINUTOS_CODIGO = 30
-TIPOS = {"SALUD": "Salud", "RECORDATORIO": "Vacuna", "AMBIENTE": "Ambiente", "CRECIMIENTO": "Crecimiento"}
+TIPOS = {"SALUD": "Salud", "RECORDATORIO": "Vacuna", "AMBIENTE": "Ambiente", "CRECIMIENTO": "Crecimiento", "VISITA": "Visita del veterinario"}
 
 
 def _token() -> str:

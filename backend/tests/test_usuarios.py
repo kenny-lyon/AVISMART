@@ -81,7 +81,7 @@ class UsuariosApiTest(unittest.TestCase):
 
         cambio = self.client.post(
             "/api/auth/cambiar-clave",
-            json={"clave_actual": clave_temporal, "clave_nueva": "NuevaClaveSegura123"},
+            json={"clave_actual": clave_temporal, "clave_nueva": "NuevaClave#12"},
             headers=headers,
         )
         self.assertEqual(cambio.status_code, 200, cambio.text)
@@ -105,7 +105,7 @@ class UsuariosApiTest(unittest.TestCase):
         self.assertEqual(baja.status_code, 200, baja.text)
         login_baja = self.client.post(
             "/api/auth/login",
-            json={"email": cuenta["email"], "password": "NuevaClaveSegura123"},
+            json={"email": cuenta["email"], "password": "NuevaClave#12"},
         )
         self.assertEqual(login_baja.status_code, 401)
 

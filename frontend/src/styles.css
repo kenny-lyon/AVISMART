@@ -502,3 +502,111 @@ tr.fila-actual td { background: #eef6f1; }
 .telegram-pasos ol { margin: 0 0 16px; padding-left: 20px; line-height: 1.8; }
 .telegram-pasos a { color: var(--green); font-weight: 700; }
 .codigo-telegram { display: inline-block; margin-left: 4px; padding: 3px 10px; border-radius: 6px; background: var(--forest); color: var(--yellow); font: 700 14px "Manrope", monospace; letter-spacing: .04em; user-select: all; }
+.label-con-ayuda { display: flex; align-items: center; gap: 6px; }
+.requisitos-clave { margin: 4px 0 0; padding-left: 16px; }
+.requisitos-clave li { margin: 2px 0; }
+.error-clave { margin: 6px 0 0; padding: 0; background: none; border: 0; color: #c62828; font-size: 13px; font-weight: 600; }
+.aviso-cerrable > span { flex: 1; }
+.aviso-cerrar { flex: 0 0 auto; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: inherit; font-size: 22px; line-height: 1; cursor: pointer; opacity: .7; }
+.aviso-cerrar:hover { opacity: 1; background: rgba(0,0,0,.06); }
+.aviso-campo { position: fixed; z-index: 1000; padding: 7px 10px; border-radius: 6px; background: #fff; border: 1px solid #f1b4ad; box-shadow: 0 6px 18px rgba(0,0,0,.12); color: #c62828; font-size: 13px; font-weight: 600; line-height: 1.35; pointer-events: none; animation: aparecer .15s ease; }
+.evid-mini { width: 38px; height: 38px; border-radius: 6px; object-fit: cover; background: var(--line-2); flex: 0 0 auto; display: inline-grid; place-items: center; }
+.evid-mini.pdf { background: #fde4e1; color: #b3261e; font-size: 10px; font-weight: 800; }
+.evid-nombre { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.evid-item small { color: var(--muted); white-space: nowrap; }
+.evid-quitar { border: 0; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 2px; }
+.evid-quitar:hover { color: #c62828; }
+.evid-grupo { margin-bottom: 16px; display: grid; gap: 6px; }
+.evid-campo { gap: 8px; }
+.evid-desc { margin-top: -2px; }
+.requerido { color: #c62828; font-weight: 700; }
+.evid-zona { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px 18px; border: 1.5px dashed #c9d3c8; border-radius: 12px; background: #fbfcf8; color: var(--ink); text-align: left; cursor: pointer; transition: border-color .15s, background .15s; font: inherit; }
+.evid-zona:hover, .evid-zona.encima { border-color: var(--forest-3, #1f5a45); background: #f1f6f0; }
+.evid-zona.falta { border-color: #e2a59d; background: #fffaf9; }
+.evid-zona.compacta { padding: 10px 14px; }
+.evid-zona:disabled { opacity: .6; cursor: progress; }
+.evid-icono { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #e4efe6; color: var(--forest-3, #1f5a45); flex: 0 0 auto; }
+.evid-zona.compacta .evid-icono { width: 30px; height: 30px; }
+.evid-texto { display: grid; gap: 2px; }
+.evid-texto b { font-size: 14px; }
+.evid-texto small { color: var(--muted); font-size: 12px; }
+.evid-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.evid-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; min-width: 0; }
+.evid-datos { display: grid; min-width: 0; flex: 1; }
+.evid-datos .evid-nombre { max-width: 100%; }
+.campo-label.con-info { display: inline-flex; align-items: center; gap: 6px; }
+.form-seccion.con-marco { margin: 0 0 16px; padding: 4px 18px 18px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.form-seccion.con-marco legend { width: auto; margin: 0 0 4px -4px; padding: 0 6px; border-bottom: 0; color: var(--forest, #102f25); }
+.ayuda.nota { margin-left: -4px; }
+.ayuda.nota .ayuda-btn { width: auto; height: auto; padding: 0 2px; border: 0; background: none; color: #c62828; font: 800 16px/1 "Manrope", sans-serif; }
+.ayuda.nota .ayuda-btn:hover, .ayuda.nota .ayuda-btn[aria-expanded="true"] { color: #8e1b14; }
+.ayuda.nota .ayuda-pop { background: #fffdf6; color: var(--ink); border: 1px solid #e6dfc9; box-shadow: 0 10px 26px rgba(16, 47, 37, .12); }
+.ayuda.nota .ayuda-pop strong { color: var(--forest, #102f25); }
+.ayuda.nota .ayuda-pop b { color: var(--ink); }
+/* Evidencias subidas: una sola fila de miniaturas que se reparten el ancho (hasta 5). */
+.evid-lista { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.evid-lista .evid-item { position: relative; flex: 1 1 0; min-width: 92px; max-width: 160px; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; }
+.evid-lista .evid-mini { width: 100%; height: auto; aspect-ratio: 1; }
+.evid-lista .evid-datos { text-align: center; }
+.evid-lista .evid-nombre { font-size: 12px; text-align: center; }
+.evid-lista .evid-datos small { font-size: 11px; }
+.evid-lista .evid-quitar { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: 0 1px 4px rgba(0, 0, 0, .15); font-size: 16px; }
+.evid-resumen { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px 16px; margin-bottom: 16px; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: #f6f8f3; }
+.evid-resumen div { display: grid; gap: 2px; min-width: 0; }
+.evid-resumen span { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.evid-resumen b { font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evid-nota { margin: -6px 0 14px; }
+.evid-vacio { margin: 0; font-size: 13px; }
+.clima-zona { display: grid; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.clima-zona-fila { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.clima-zona-fila span { color: var(--muted); }
+.clima-zona-pronostico { margin: 2px 0 0; padding: 8px 10px; border-radius: 8px; background: #f3f6f1; font-size: 13px; line-height: 1.45; }
+.clima-zona-pronostico.fria { background: #fff6e0; color: #6b4a00; }
+.clima-zona small { font-size: 11px; }
+.clima-zona-nota { margin: 10px 0 0; font-size: 13px; }
+.clima-afuera { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #f6f8f3; }
+.clima-afuera p { margin: 0; flex: 1; font-size: 13px; color: var(--muted); line-height: 1.45; }
+.clima-afuera p b { color: var(--ink); }
+.clima-afuera .btn { flex: 0 0 auto; white-space: nowrap; }
+.clima-zona-rango { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.mapa-clima { grid-column: 1 / -1; display: grid; gap: 8px; }
+.mapa-clima iframe { width: 100%; height: 380px; border: 1px solid var(--line); border-radius: 10px; background: #e9eee8; }
+.mapa-clima small { font-size: 11.5px; }
+.mapa-clima-capas { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #fff; justify-self: start; }
+.mapa-clima-capas button { border: 0; background: none; padding: 5px 12px; border-radius: 6px; font: 600 13px "Manrope", sans-serif; color: var(--muted); cursor: pointer; }
+.mapa-clima-capas button.activa { background: var(--forest, #102f25); color: #fff; }
+@media (max-width: 560px) { .clima-afuera { flex-direction: column; align-items: stretch; } .mapa-clima iframe { height: 300px; } }
+.mapa-clima-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mapa-clima-barra .btn { display: inline-flex; align-items: center; gap: 6px; }
+.mapa-clima-valor { margin: 0; padding: 8px 12px; border-radius: 8px; background: #f3f6f1; font-size: 14px; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mapa-clima-valor span { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* Revisión de bajas */
+.bajas-lista { display: grid; gap: 14px; }
+.baja-dia { display: grid; gap: 10px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.baja-dia.prioridad { border-color: #e2a59d; box-shadow: inset 4px 0 0 #c62828; }
+.baja-dia header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.baja-dia h3 { margin: 0; font: 700 15px "Manrope", sans-serif; }
+.baja-dia header p { margin: 2px 0 0; font-size: 13.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.baja-dia header p b { color: var(--ink); }
+.chip-riesgo { padding: 1px 8px; border-radius: 999px; background: #fde4e1; color: #b3261e; font-size: 12px; font-weight: 700; }
+.baja-sin-fotos { margin: 0; font-size: 13px; }
+.baja-revision { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: #f6f8f3; font-size: 13.5px; }
+.baja-revision p { margin: 0; }
+.dictamen { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; white-space: nowrap; text-decoration: none; }
+.dictamen.normal { background: #e4efe6; color: #1f5a45; }
+.dictamen.visita { background: #fff1d6; color: #7a5200; }
+.dictamen.brote { background: #fde4e1; color: #b3261e; }
+.dictamen.pendiente { background: #eef1ee; color: #55625b; }
+.dictamen-opciones { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dictamen-opcion { display: grid; gap: 4px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; cursor: pointer; background: #fff; }
+.dictamen-opcion input { position: absolute; opacity: 0; pointer-events: none; }
+.dictamen-opcion b { font-size: 14px; }
+.dictamen-opcion small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.dictamen-opcion.elegida.normal { border-color: #1f5a45; background: #f1f7f2; }
+.dictamen-opcion.elegida.visita { border-color: #c68a00; background: #fffaf0; }
+.dictamen-opcion.elegida.brote { border-color: #c62828; background: #fff6f5; }
+@media (max-width: 640px) { .dictamen-opciones { grid-template-columns: 1fr; } .baja-dia header { flex-direction: column; } }
+.credencial-envio { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; font-size: 13px; line-height: 1.4; }
+.credencial-envio.ok { color: #1f5a45; }
+.credencial-envio.riesgo { color: #b3261e; }
+.credencial-envio svg { flex: 0 0 auto; margin-top: 2px; }

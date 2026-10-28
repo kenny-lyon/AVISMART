@@ -13,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests.evidencia_prueba import guia
 from app.db import Base, get_db
 from app.main import app
 from app.models import Alerta, Configuracion, Galpon, Granja, Lote, Organizacion, RegistroDiario, SolicitudContacto, Usuario
@@ -227,11 +228,19 @@ class BajaClienteTest(unittest.TestCase):
         self.assertTrue(all("Andina" not in g["nombre"] for g in granjas), "solo ve los datos de ese cliente")
 
         self.assertEqual(self.client.get("/api/plataforma/organizaciones", headers=soporte).status_code, 403, "en soporte no es plataforma")
-        cambio = self.client.post("/api/auth/cambiar-clave", headers=soporte, json={"clave_actual": CLAVE, "clave_nueva": "OtraClave12345"})
+        cambio = self.client.post("/api/auth/cambiar-clave", headers=soporte, json={"clave_actual": CLAVE, "clave_nueva": "OtraClave#1234"})
         self.assertEqual(cambio.status_code, 403)
         token = self.client.post("/api/auth/login", json={"email": "luis@sur.pe", "password": CLAVE}).json()["token"]
         self.assertEqual(self.client.post(f"/api/plataforma/organizaciones/{sur}/soporte", headers={"Authorization": f"Bearer {token}"}).status_code, 403,
                          "un productor no puede abrir el modo soporte")
+
+        accesos = self.client.get(f"/api/plataforma/organizaciones/{sur}/accesos", headers=self.h).json()
+        entradas = [a for a in accesos if a["evento"] == "Entrada en modo soporte"]
+        self.assertEqual(len(entradas), 1, "RN-21: la entrada en modo soporte queda registrada")
+        self.assertIn("(AviSmart)", entradas[0]["usuario"])
+        otro = next(i for nombre, i in self.ids.items() if i != sur)
+        self.assertFalse(any(a["evento"] == "Entrada en modo soporte" for a in self.client.get(f"/api/plataforma/organizaciones/{otro}/accesos", headers=self.h).json()),
+                         "no aparece en otro cliente")
 
     def test_ubicacion_de_la_granja_con_ubigeo_y_mapa(self):
         token = self.client.post("/api/auth/login", json={"email": "luis@sur.pe", "password": CLAVE}).json()["token"]
@@ -274,7 +283,8 @@ class BajaClienteTest(unittest.TestCase):
         galpon = self.client.post(f"/api/granjas/{granja}/galpones", headers=prod, json={"capacidad": 5000}).json()["id"]
         lote = lambda vacunas: self.client.post("/api/lotes", headers=prod, json={  # noqa: E731
             "galpon_id": galpon, "linea": "Hubbard", "fecha_ingreso": date.today().isoformat(), "proveedor": "Avinka",
-            "cantidad_recibida": 3000, "descarte_llegada": 10, "peso_llegada_g": 41, "precio_pollito": 2.2, "vacunas_incubadora": vacunas})
+            "cantidad_recibida": 3000, "descarte_llegada": 10, "peso_llegada_g": 41, "precio_pollito": 2.2, "vacunas_incubadora": vacunas,
+            "adjuntos": [guia(self.client, prod)]})
 
         self.assertEqual(lote(["Viruela aviar"]).status_code, 400, "solo vacunas de la lista de la incubadora")
         r = lote(["Marek (HVT)", "Newcastle + Bronquitis (B1 + H120)"])

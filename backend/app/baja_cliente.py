@@ -2,15 +2,19 @@
 import json
 import os
 import re
+import shutil
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
-from sqlalchemy import inspect
+from sqlalchemy import inspect, or_
 from sqlalchemy.orm import Session
 
 from .logic import clave_umbral
 from .models import (
+    RevisionBajas,
+    AdjuntoLote,
+    AccesoUsuario,
     Alerta,
     CambioAlimento,
     CierreLote,
@@ -70,8 +74,10 @@ def _consultas(db: Session, organizacion: Organizacion) -> dict:
     correos = [u.email for u in usuarios]
     return {
         "alertas": por_lote(Alerta),
+        "adjuntos_lote": db.query(AdjuntoLote).filter(AdjuntoLote.organizacion_id == organizacion.id),
         "fases_alimento": por_lote(FaseAlimento),
         "cambios_alimento": por_lote(CambioAlimento),
+        "revisiones_bajas": por_lote(RevisionBajas),
         "registros_diarios": por_lote(RegistroDiario),
         "vacunaciones": por_lote(Vacunacion),
         "tratamientos": por_lote(Tratamiento),
@@ -80,6 +86,8 @@ def _consultas(db: Session, organizacion: Organizacion) -> dict:
         "lotes": db.query(Lote).filter(Lote.id.in_(ids["lotes"] or [0])),
         "galpones": db.query(Galpon).filter(Galpon.id.in_(ids["galpones"] or [0])),
         "granjas": db.query(Granja).filter(Granja.id.in_(ids["granjas"] or [0])),
+        "accesos_usuario": db.query(AccesoUsuario).filter(or_(
+            AccesoUsuario.usuario_id.in_([u.id for u in usuarios] or [0]), AccesoUsuario.organizacion_id == organizacion.id)),
         "intentos_login": db.query(IntentoLogin).filter(IntentoLogin.email.in_(correos or [""])),
         "intentos_recuperacion": db.query(IntentoRecuperacion).filter(IntentoRecuperacion.email.in_(correos or [""])),
         "usuarios": usuarios,
@@ -122,6 +130,12 @@ def eliminar(db: Session, organizacion: Organizacion) -> dict:
     exportacion = carpeta / f"cliente_{etiqueta}.json"
     exportacion.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    # Las evidencias (fotos y PDF) se guardan con la exportación del cliente.
+    from .evidencias import carpeta as carpeta_adjuntos
+
+    archivos = carpeta_adjuntos() / f"org_{organizacion.id}"
+    if archivos.exists():
+        shutil.move(str(archivos), str(carpeta / f"adjuntos_{etiqueta}"))
     for consulta in _consultas(db, organizacion).values():
         consulta.delete(synchronize_session=False)
     if organizacion.solicitud_id:

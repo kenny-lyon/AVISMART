@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
-import CampoClave from "../components/CampoClave";
+import CampoClave, { problemaClave } from "../components/CampoClave";
 
 export default function RestablecerClave() {
   const [params] = useSearchParams();
@@ -19,8 +19,9 @@ export default function RestablecerClave() {
       setError("Las claves no coinciden");
       return;
     }
-    if (nueva !== nueva.trim()) {
-      setError("La clave no puede empezar ni terminar con espacios");
+    const problema = problemaClave(nueva);
+    if (problema) {
+      setError(problema);
       return;
     }
     setGuardando(true);
@@ -45,7 +46,7 @@ export default function RestablecerClave() {
             <img className="mark" src="/images/avismart-logo.png" alt="" />
           </Link>
           <h1>Crea tu clave nueva.</h1>
-          <p>Usa al menos 10 caracteres. Al guardarla se cerrarán todas las sesiones abiertas de tu cuenta.</p>
+          <p>Usa entre 8 y 15 caracteres, con letras, números y símbolos. Al guardarla se cerrarán todas las sesiones abiertas de tu cuenta.</p>
         </div>
         <small>Acceso privado · AviSmart</small>
       </section>
@@ -72,8 +73,8 @@ export default function RestablecerClave() {
                   {/venci|usado/.test(error) && <> <Link to="/olvide-clave">Pedir un enlace nuevo</Link></>}
                 </div>
               )}
-              <CampoClave id="nueva" label="Nueva clave" value={nueva} onChange={setNueva} autoComplete="new-password" minLength={10} autoFocus />
-              <CampoClave id="confirmacion" label="Confirmar nueva clave" value={confirmacion} onChange={setConfirmacion} autoComplete="new-password" minLength={10} />
+              <CampoClave id="nueva" label="Nueva clave" value={nueva} onChange={setNueva} autoComplete="new-password" minLength={8} autoFocus reglas />
+              <CampoClave id="confirmacion" label="Confirmar nueva clave" value={confirmacion} onChange={setConfirmacion} autoComplete="new-password" minLength={8} />
               <button className="btn full" disabled={guardando}>{guardando ? "Guardando…" : "Guardar clave nueva"}</button>
             </form>
           )}

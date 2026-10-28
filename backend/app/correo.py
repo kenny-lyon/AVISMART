@@ -9,6 +9,7 @@ import os
 import smtplib
 import ssl
 from email.message import EmailMessage
+from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -85,17 +86,65 @@ def enviar_recuperacion(destino: str, nombre: str, enlace: str, minutos: int) ->
     )
 
 
-def enviar_aviso_cambio(destino: str, nombre: str) -> bool:
-    """Aviso de seguridad después de restablecer la clave."""
+def telefono_emergencia() -> str:
+    return os.getenv("AVISMART_TELEFONO_EMERGENCIA", "931113015").strip()
+
+
+def enviar_aviso_cambio(destino: str, nombre: str, cuando: str = "", ip: str | None = None) -> bool:
+    """Aviso de seguridad después de cambiar o restablecer la clave, con cómo pedir ayuda."""
+    numero = telefono_emergencia()
+    visible = f"{numero[:3]} {numero[3:6]} {numero[6:]}" if len(numero) == 9 else numero
+    whatsapp = f"https://wa.me/51{numero}"
+    contacto = f"{url_publica()}/contacto"
+    detalle = f"Fecha: {cuando}" + (f" · Conexión: {ip}" if ip else "")
     return _enviar(
         destino,
         "Tu clave de AviSmart fue cambiada",
-        f"Hola {nombre}:\n\nLa clave de tu cuenta de AviSmart se cambió y se cerraron todas las sesiones abiertas.\n\n"
-        "Si no fuiste tú, contacta de inmediato al equipo de AviSmart.",
+        f"Hola {nombre}:\n\nLa clave de tu cuenta de AviSmart se cambió y se cerraron todas las sesiones abiertas.\n{detalle}\n\n"
+        "Si no fuiste tú:\n"
+        f"1. Escríbenos de inmediato por WhatsApp al {visible} ({whatsapp}) o desde el formulario de Contacto ({contacto}), con el motivo «Soporte técnico».\n"
+        "2. Cambia también la clave de tu correo: quien cambió tu clave pudo haber entrado a él.\n"
+        "Verificaremos tu identidad, cerraremos el acceso y te daremos una clave nueva.",
         _html(
             "Tu clave fue cambiada",
             f"<p>Hola {nombre}:</p><p>La clave de tu cuenta de AviSmart se cambió y se cerraron todas las sesiones abiertas.</p>"
-            "<p><b>Si no fuiste tú</b>, contacta de inmediato al equipo de AviSmart.</p>",
+            f'<p style="color:#637069;font-size:13px">{detalle}</p>'
+            "<p><b>Si no fuiste tú:</b></p><ol>"
+            f'<li>Escríbenos de inmediato por WhatsApp al <a href="{whatsapp}"><b>{visible}</b></a> o desde el '
+            f'<a href="{contacto}">formulario de Contacto</a>, con el motivo «Soporte técnico».</li>'
+            "<li>Cambia también la clave de tu correo: quien cambió tu clave pudo haber entrado a él.</li></ol>"
+            "<p>Verificaremos tu identidad, cerraremos el acceso y te daremos una clave nueva.</p>",
+        ),
+    )
+
+
+def enviar_acceso(destino: str, nombre: str, clave: str, empresa: str | None = None, restablecida: bool = False) -> bool:
+    """Datos de acceso con la clave temporal: al entrar, el sistema le pide crear su propia clave."""
+    enlace = f"{url_publica()}/login"
+    nombre_h, empresa_h = escape(nombre), escape(empresa or "")
+    if restablecida:
+        asunto = "Tu clave de AviSmart fue restablecida"
+        intro = "Se restableció la clave de tu cuenta en AviSmart. Estos son tus nuevos datos de acceso:"
+    else:
+        asunto = "Bienvenido a AviSmart: tus datos de acceso"
+        intro = f"Ya tienes tu cuenta en AviSmart{f' para {empresa}' if empresa else ''}. Estos son tus datos de acceso:"
+        intro_h = f"Ya tienes tu cuenta en AviSmart{f' para <b>{empresa_h}</b>' if empresa else ''}. Estos son tus datos de acceso:"
+    return _enviar(
+        destino,
+        asunto,
+        f"Hola {nombre}:\n\n{intro}\n\nCorreo: {destino}\nClave temporal: {clave}\n\nEntra en: {enlace}\n\n"
+        "La clave temporal sirve solo para el primer ingreso: al entrar, el sistema te pedirá crear tu propia clave.\n"
+        f"Si no esperabas este correo, llámanos al {telefono_emergencia()}.",
+        _html(
+            "Clave restablecida" if restablecida else "Bienvenido a AviSmart",
+            f"<p>Hola {nombre_h}:</p><p>{intro if restablecida else intro_h}</p>"
+            '<table style="border-collapse:collapse;margin:8px 0 4px">'
+            f'<tr><td style="padding:4px 12px 4px 0;color:#637069">Correo</td><td><b>{escape(destino)}</b></td></tr>'
+            f'<tr><td style="padding:4px 12px 4px 0;color:#637069">Clave temporal</td>'
+            f'<td><b style="font-family:Consolas,monospace;font-size:16px;letter-spacing:1px">{escape(clave)}</b></td></tr></table>'
+            f"{_boton(enlace, 'Entrar a AviSmart')}"
+            '<p style="color:#637069;font-size:13px">La clave temporal sirve solo para el primer ingreso: al entrar, el sistema te pedirá '
+            f"crear tu propia clave. Si no esperabas este correo, llámanos al {telefono_emergencia()}.</p>",
         ),
     )
 

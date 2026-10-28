@@ -3,6 +3,7 @@ import { api, type Alimentacion as DatosAlimentacion, type FaseAlimento } from "
 import { useAuth } from "../auth";
 import { Campo, DrawerForm, Estado, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import { valorCampo } from "../textos";
 
 type Fila = { nombre: string; dia_hasta: string; presentacion: string; producto: string };
 
@@ -156,7 +157,7 @@ export default function Alimentacion() {
               </select>
             </Campo>
             <Campo label="Hasta el día">
-              <input type="number" min={desde(i)} max={70} value={f.dia_hasta} onChange={(e) => cambiarFila(i, { dia_hasta: e.target.value })} required />
+              <input type="number" min={desde(i)} max={70} value={f.dia_hasta} onChange={(e) => cambiarFila(i, { dia_hasta: valorCampo(e) })} required />
             </Campo>
             <Campo label="Presentación">
               <select value={f.presentacion} onChange={(e) => cambiarFila(i, { presentacion: e.target.value })}>

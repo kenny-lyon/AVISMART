@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { api, ROL, type Rol, type Usuario } from "../api";
 import { useAuth } from "../auth";
 import { Avatar, Campo, Drawer, DrawerForm, Estado, Icon, Panel, Seccion, mensajeError, useToast } from "./ui";
+import { LARGO_NOMBRE, textoDe } from "../textos";
 
-export type Credencial = { email: string; clave: string };
+// enviado: si el correo con los datos de acceso salió (undefined = no se intentó).
+export type Credencial = { email: string; clave: string; enviado?: boolean };
 
 /** Muestra una clave temporal una sola vez, con opción de copiarla. */
 export function CredencialTemporal({ credencial }: { credencial: Credencial }) {
@@ -23,6 +25,12 @@ export function CredencialTemporal({ credencial }: { credencial: Credencial }) {
         <p>Usuario: <code>{credencial.email}</code></p>
         <p>Clave temporal: <code>{credencial.clave}</code></p>
         <small>La persona deberá reemplazarla al entrar por primera vez.</small>
+        {credencial.enviado === true && (
+          <p className="credencial-envio ok"><Icon name="check" size={15} /> Le enviamos estos datos a <b>{credencial.email}</b>, con el enlace para entrar.</p>
+        )}
+        {credencial.enviado === false && (
+          <p className="credencial-envio riesgo"><Icon name="aviso" size={15} /> No se pudo enviar el correo. Entrégale estos datos por WhatsApp o en persona.</p>
+        )}
       </div>
       <button className="btn secondary" type="button" onClick={copiar}>Copiar</button>
     </div>
@@ -35,7 +43,11 @@ export function DrawerCredencial({ credencial, titulo, onCerrar }: { credencial:
     <Drawer
       abierto={credencial !== null}
       titulo={titulo}
-      descripcion="Entrega estos datos por un canal privado, idealmente el correo y la clave por medios distintos."
+      descripcion={
+        credencial?.enviado
+          ? "Los datos de acceso ya llegaron a su correo. Guárdalos aquí solo si necesitas dárselos por otro medio."
+          : "Entrega estos datos por un canal privado, idealmente el correo y la clave por medios distintos."
+      }
       onCerrar={onCerrar}
       pie={<button className="btn" type="button" onClick={onCerrar}>Listo</button>}
     >
@@ -88,14 +100,14 @@ export default function Cuentas({ roles, gestiona = roles, base = "/usuarios", t
     setError("");
     setGuardando(true);
     try {
-      const data = await api<{ usuario: Usuario; clave_temporal: string }>(base, {
+      const data = await api<{ usuario: Usuario; clave_temporal: string; correo_enviado: boolean }>(base, {
         method: "POST",
         body: JSON.stringify({ nombre, email, rol }),
       });
       setNueva(false);
       setNombre("");
       setEmail("");
-      setCredencial({ titulo: `Cuenta creada para ${data.usuario.nombre}`, datos: { email: data.usuario.email, clave: data.clave_temporal } });
+      setCredencial({ titulo: `Cuenta creada para ${data.usuario.nombre}`, datos: { email: data.usuario.email, clave: data.clave_temporal, enviado: data.correo_enviado } });
       await recargar();
     } catch (err) {
       setError(mensajeError(err, "No se pudo crear la cuenta"));
@@ -107,8 +119,8 @@ export default function Cuentas({ roles, gestiona = roles, base = "/usuarios", t
   async function restablecer(usuario: Usuario) {
     if (!window.confirm(`Se invalidará la clave actual de ${usuario.nombre}. ¿Continuar?`)) return;
     try {
-      const data = await api<{ usuario: Usuario; clave_temporal: string }>(`${base}/${usuario.id}/restablecer-clave`, { method: "POST" });
-      setCredencial({ titulo: `Nueva clave para ${usuario.nombre}`, datos: { email: data.usuario.email, clave: data.clave_temporal } });
+      const data = await api<{ usuario: Usuario; clave_temporal: string; correo_enviado: boolean }>(`${base}/${usuario.id}/restablecer-clave`, { method: "POST" });
+      setCredencial({ titulo: `Nueva clave para ${usuario.nombre}`, datos: { email: data.usuario.email, clave: data.clave_temporal, enviado: data.correo_enviado } });
       await recargar();
     } catch (err) {
       avisar(mensajeError(err, "No se pudo restablecer la clave"), "riesgo");
@@ -151,7 +163,7 @@ export default function Cuentas({ roles, gestiona = roles, base = "/usuarios", t
                       <Avatar nombre={u.nombre} />
                       <div className="celda-principal">
                         <strong>{u.nombre}{u.id === actual?.id ? " (tú)" : ""}</strong>
-                        <small>{u.email}</small>
+                        <small>{u.email}{u.telefono ? ` · WhatsApp ${u.telefono.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3")}` : ""}{u.correo_alterno ? ` · respaldo ${u.correo_alterno}` : ""}</small>
                       </div>
                     </div>
                   </td>
@@ -186,7 +198,7 @@ export default function Cuentas({ roles, gestiona = roles, base = "/usuarios", t
       >
         <Seccion titulo="Persona">
           <Campo label="Nombre completo" ancho>
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} required minLength={3} />
+            <input value={nombre} onChange={(e) => setNombre(textoDe(e, "persona", nombre))} required minLength={3} maxLength={LARGO_NOMBRE} />
           </Campo>
           <Campo label="Correo" ancho>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />

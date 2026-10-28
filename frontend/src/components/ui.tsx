@@ -29,6 +29,7 @@ const PATHS = {
   editar: "M4 20h4L19 9l-4-4L4 16zM14 6l4 4",
   llave: "M15 7a4 4 0 1 1-3.9 5H8v3H5v-3H3v-3h8.1A4 4 0 0 1 15 7zM16 11h.01",
   pausa: "M8 5v14M16 5v14",
+  subir: "M12 16V4M7 9l5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4",
   alimento: "M5 9h14l-1.5 11h-11zM8 9V6a4 4 0 0 1 8 0v3M9 14h6",
   ubicacion: "M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
   papelera: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6",
@@ -121,7 +122,7 @@ const TONOS: Record<string, string> = {
   ACTIVO: "ok", ACTIVA: "ok", VALIDADA: "ok", ATENDIDA: "ok", CONTACTADA: "ok", CLIENTE: "acento", ENVIADA: "ok",
   PENDIENTE: "alerta", INDICADO: "alerta", NUEVA: "alerta", VISTA: "info", OBSERVADA: "riesgo", VENCIDA: "riesgo", SOSPECHOSA: "riesgo", PROGRAMADA: "info", APLICADA: "acento", SUSPENDIDA: "riesgo",
   CERRADO: "neutro", DESCARTADA: "neutro", BAJA: "neutro", INACTIVO: "neutro", FALLIDA: "riesgo",
-  SALUD: "riesgo", RECORDATORIO: "alerta", AMBIENTE: "info", CRECIMIENTO: "acento",
+  SALUD: "riesgo", RECORDATORIO: "alerta", AMBIENTE: "info", CRECIMIENTO: "acento", VISITA: "alerta",
 };
 
 export function Estado({ valor, texto }: { valor: string; texto?: string }) {
@@ -148,24 +149,30 @@ export function Vacio({ icono = "registro", titulo, texto, accion }: {
 
 /* ----------------------------------------------------- Formularios */
 
-export function Campo({ label, ayuda, children, ancho = false }: {
+/** `ayuda` se ve siempre debajo del campo (para datos que cambian); `info` va en el «?» junto al título. */
+export function Campo({ label, ayuda, info, children, ancho = false }: {
   label: string;
   ayuda?: ReactNode;
+  info?: ReactNode;
   children: ReactNode;
   ancho?: boolean;
 }) {
   return (
     <label className={ancho ? "campo ancho" : "campo"}>
-      <span className="campo-label">{label}</span>
+      <span className="campo-label con-info">
+        {label}
+        {info && <Ayuda titulo={label} nota>{info}</Ayuda>}
+      </span>
       {children}
       {ayuda && <small className="campo-ayuda">{ayuda}</small>}
     </label>
   );
 }
 
-export function Seccion({ titulo, children }: { titulo: string; children: ReactNode }) {
+/** `marco`: la sección va dentro de un recuadro, para distinguir dónde empieza y termina. */
+export function Seccion({ titulo, children, marco = false }: { titulo: string; children: ReactNode; marco?: boolean }) {
   return (
-    <fieldset className="form-seccion">
+    <fieldset className={marco ? "form-seccion con-marco" : "form-seccion"}>
       <legend>{titulo}</legend>
       <div className="form-grid">{children}</div>
     </fieldset>
@@ -298,9 +305,10 @@ export function mensajeError(err: unknown, porDefecto = "No se pudo completar la
 /* ---------------------------------------------------------- Ayuda */
 
 /** Ícono "?" que explica un término en lenguaje sencillo. Funciona con mouse, teclado y toque. */
-export function Ayuda({ titulo, children }: { titulo: string; children: ReactNode }) {
+/** `nota`: el disparador es un asterisco rojo y el globo es claro (se usa en los formularios). */
+export function Ayuda({ titulo, children, arriba = false, nota = false }: { titulo: string; children: ReactNode; arriba?: boolean; nota?: boolean }) {
   const [abierta, setAbierta] = useState(false);
-  const [pos, setPos] = useState({ left: 0, top: 0, ancho: 280 });
+  const [pos, setPos] = useState({ left: 0, top: 0, bottom: 0, ancho: 280 });
   const ref = useRef<HTMLSpanElement>(null);
 
   function mostrar() {
@@ -309,7 +317,7 @@ export function Ayuda({ titulo, children }: { titulo: string; children: ReactNod
       // Se fija a la ventana y se recorta a sus bordes para que nunca quede fuera de la pantalla.
       const ancho = Math.min(280, window.innerWidth - 16);
       const left = Math.min(Math.max(caja.left - 12, 8), window.innerWidth - ancho - 8);
-      setPos({ left, top: caja.bottom + 8, ancho });
+      setPos({ left, top: caja.bottom + 8, bottom: window.innerHeight - caja.top + 8, ancho });
     }
     setAbierta(true);
   }
@@ -327,7 +335,7 @@ export function Ayuda({ titulo, children }: { titulo: string; children: ReactNod
   }, [abierta]);
 
   return (
-    <span className="ayuda" ref={ref} onMouseEnter={mostrar} onMouseLeave={() => setAbierta(false)}>
+    <span className={nota ? "ayuda nota" : "ayuda"} ref={ref} onMouseEnter={mostrar} onMouseLeave={() => setAbierta(false)}>
       <button
         type="button"
         className="ayuda-btn"
@@ -337,10 +345,10 @@ export function Ayuda({ titulo, children }: { titulo: string; children: ReactNod
         onFocus={mostrar}
         onBlur={() => setAbierta(false)}
       >
-        ?
+        {nota ? "*" : "?"}
       </button>
       {abierta && (
-        <span className="ayuda-pop" role="tooltip" style={{ left: pos.left, top: pos.top, width: pos.ancho }}>
+        <span className="ayuda-pop" role="tooltip" style={arriba ? { left: pos.left, bottom: pos.bottom, width: pos.ancho } : { left: pos.left, top: pos.top, width: pos.ancho }}>
           <strong>{titulo}</strong>
           {children}
         </span>

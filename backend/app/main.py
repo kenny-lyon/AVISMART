@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -37,6 +38,7 @@ from .logic import (
 from .models import (
     IntentoLogin,
     IntentoRecuperacion,
+    AccesoUsuario,
     Alerta,
     CambioAlimento,
     CierreLote,
@@ -53,12 +55,14 @@ from .models import (
     Usuario,
     Vacunacion,
 )
-from . import notifications
+from . import clima_local, evidencias, notifications, revision_bajas
+from .textos import GuiaRemision, NombreLugar, NombreLugarOpcional, NombrePersona
 from .notifications import estado_telegram, notificar_alertas, probar_telegram
 from .security import (
     create_token,
     establecer_clave,
     get_current_user,
+    get_ready_user,
     hash_password,
     problema_con_clave_nueva,
     organizacion_de,
@@ -89,6 +93,8 @@ def _arranque():
 _arranque()
 
 app = FastAPI(title="AviSmart")
+app.include_router(evidencias.router)
+app.include_router(revision_bajas.router)
 
 # Nombres legibles de los campos para los mensajes de validación.
 CAMPOS = {
@@ -98,7 +104,7 @@ CAMPOS = {
     "peso_total_kg": "peso total vendido (kg)", "precio_venta_kg": "precio por kg", "dias_tratamiento": "días de tratamiento",
     "dias_carencia": "días de carencia", "aves_tratadas": "aves tratadas", "cantidad_recibida": "pollitos recibidos",
     "descarte_llegada": "descartados al llegar", "peso_llegada_g": "peso al llegar (g)", "precio_pollito": "precio por pollito",
-    "email": "correo", "clave_nueva": "clave nueva", "nombre": "nombre", "mensaje": "mensaje", "capacidad": "capacidad",
+    "email": "correo", "password": "clave", "clave_nueva": "clave nueva", "nombre": "nombre", "mensaje": "mensaje", "capacidad": "capacidad", "proveedor": "incubadora o proveedor", "guia": "guía", "empresa": "empresa", "productor_nombre": "nombre del productor",
 }
 
 
@@ -117,6 +123,8 @@ def _explicar(error: dict) -> str:
         return f"«{campo}» debe ser {'menor o igual a' if tipo.endswith('equal') else 'menor que'} {numero('le', 'lt')}"
     if tipo == "missing":
         return f"Falta completar «{campo}»"
+    if tipo == "value_error":
+        return str(error.get("msg", "")).removeprefix("Value error, ")
     if tipo in ("string_too_short", "string_too_long"):
         return f"«{campo}» tiene un largo no permitido"
     return f"Revisa el dato de «{campo}»"
@@ -148,26 +156,28 @@ app.add_middleware(
 
 
 class LoginIn(BaseModel):
-    email: str
-    password: str
+    # Topes para que no se pueda enviar texto gigante (la clave se procesa con PBKDF2, que es costoso).
+    email: str = Field(min_length=3, max_length=160)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class LoteIn(BaseModel):
     galpon_id: int
     linea: str
     fecha_ingreso: date
-    proveedor: str = Field(min_length=2, max_length=120)
-    guia: str = Field(default="", max_length=60)
+    proveedor: NombreLugar
+    guia: GuiaRemision = ""
     sexo: str = "MIXTO"
     cantidad_recibida: int = Field(gt=0, le=200_000)
     descarte_llegada: int = Field(default=0, ge=0)
     peso_llegada_g: float = Field(ge=25, le=70)
-    precio_pollito: float = Field(ge=0, le=50)
+    precio_pollito: float = Field(ge=0, le=10)  # un pollito BB cuesta entre S/ 1,5 y 4
     peso_objetivo_g: int = Field(default=2800, ge=1000, le=5000)
     edad_saca_dias: int = Field(default=42, ge=21, le=70)
     observaciones: str = Field(default="", max_length=1000)
     # Vacunas con las que llegan los pollitos (ya aplicadas en la incubadora).
     vacunas_incubadora: list[str] = Field(default_factory=list, max_length=10)
+    adjuntos: list[int] = Field(default_factory=list, max_length=25)  # evidencias subidas como temporales
 
 
 class RegistroIn(BaseModel):
@@ -178,6 +188,8 @@ class RegistroIn(BaseModel):
     peso_muestra_g: float = Field(ge=25, le=6_000)
     # Fase de alimento que se dio; si no se indica, la del plan para ese día.
     fase_alimento: str = Field(default="", max_length=30)
+    # Evidencias opcionales (bajas, consumo y pesaje) subidas antes como temporales.
+    adjuntos: list[int] = Field(default_factory=list, max_length=15)
 
 
 class ClimaIn(BaseModel):
@@ -217,7 +229,7 @@ class UmbralIn(BaseModel):
 class CierreIn(BaseModel):
     fecha_cierre: date
     aves_vendidas: int = Field(gt=0)
-    peso_total_kg: float = Field(gt=0)
+    peso_total_kg: float = Field(gt=0, le=600_000)
     precio_venta_kg: float = Field(gt=0, le=50)
     costo_pollitos: float = Field(ge=0, le=10_000_000)
     costo_alimento: float = Field(ge=0, le=10_000_000)
@@ -252,9 +264,16 @@ RECUPERACION_POR_IP_15_MIN = 5
 
 
 class UsuarioCrearIn(BaseModel):
-    nombre: str = Field(min_length=3, max_length=120)
+    nombre: NombrePersona
     email: str = Field(min_length=5, max_length=160)
     rol: str
+    telefono: str = Field(default="", max_length=20)
+    correo_alterno: str = Field(default="", max_length=160)
+
+
+class ContactoCuentaIn(BaseModel):
+    telefono: str = Field(default="", max_length=20)
+    correo_alterno: str = Field(default="", max_length=160)
 
 
 class UsuarioEstadoIn(BaseModel):
@@ -262,10 +281,10 @@ class UsuarioEstadoIn(BaseModel):
 
 
 class ContactoIn(BaseModel):
-    nombre: str = Field(min_length=3, max_length=120)
+    nombre: NombrePersona
     email: str = Field(min_length=5, max_length=160)
     telefono: str = Field(default="", max_length=20)
-    empresa: str = Field(default="", max_length=160)
+    empresa: NombreLugarOpcional = ""
     pais: str = Field(min_length=2, max_length=80)
     aves: str = Field(default="", max_length=60)
     motivo: str = Field(min_length=2, max_length=40)
@@ -284,7 +303,7 @@ class SolicitudEstadoIn(BaseModel):
 
 
 class GranjaIn(BaseModel):
-    nombre: str = Field(min_length=3, max_length=160)
+    nombre: NombreLugar
     ubicacion: str = Field(default="", max_length=160)
     departamento: str = Field(default="", max_length=60)
     provincia: str = Field(default="", max_length=80)
@@ -340,9 +359,11 @@ def _siguiente_galpon(granja: Granja) -> str:
 
 
 class OrganizacionIn(BaseModel):
-    nombre: str = Field(min_length=3, max_length=160)
-    productor_nombre: str = Field(min_length=3, max_length=120)
+    nombre: NombreLugar
+    productor_nombre: NombrePersona
     productor_email: str = Field(min_length=5, max_length=160)
+    productor_telefono: str = Field(default="", max_length=20)
+    productor_correo_alterno: str = Field(default="", max_length=160)
     solicitud_id: int | None = None
 
 
@@ -382,6 +403,8 @@ def _usuario(u: Usuario) -> dict:
         "activo": bool(u.activo),
         "debe_cambiar_clave": bool(u.debe_cambiar_clave),
         "soporte": getattr(u, "soporte", False),
+        "telefono": getattr(u, "telefono", None),
+        "correo_alterno": getattr(u, "correo_alterno", None),
         "organizacion": (
             {"id": u.organizacion.id, "nombre": u.organizacion.nombre} if u.organizacion else None
         ),
@@ -757,6 +780,8 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         aviso = f" Te queda{'n' if restantes != 1 else ''} {restantes} intento{'s' if restantes != 1 else ''} antes de un bloqueo temporal." if 0 < restantes <= 2 else ""
         raise HTTPException(status_code=401, detail="Correo o clave incorrectos." + aviso)
     db.query(IntentoLogin).filter(IntentoLogin.email == email).delete(synchronize_session=False)
+    if not organizacion_suspendida(usuario):
+        _registrar_acceso(db, usuario, "INGRESO", request)
     db.commit()
     if organizacion_suspendida(usuario):
         raise HTTPException(status_code=401, detail="El acceso de tu empresa está suspendido. Comunícate con AviSmart")
@@ -768,9 +793,64 @@ def me(usuario: Usuario = Depends(get_current_user)):
     return _usuario(usuario)
 
 
+@app.put("/api/me/contacto")
+def editar_mi_contacto(body: ContactoCuentaIn, db: Session = Depends(get_db), usuario: Usuario = Depends(get_ready_user)):
+    """Cada persona completa su celular (WhatsApp) y su correo de respaldo."""
+    if getattr(usuario, "soporte", False):
+        raise HTTPException(status_code=403, detail="En modo soporte no se pueden cambiar los datos de contacto")
+    usuario.telefono, usuario.correo_alterno = _contacto_cuenta(body.telefono, body.correo_alterno, usuario.email)
+    db.commit()
+    return _usuario(usuario)
+
+
+@app.get("/api/me/accesos")
+def mis_accesos(db: Session = Depends(get_db), usuario: Usuario = Depends(get_ready_user)):
+    filas = db.query(AccesoUsuario).filter(AccesoUsuario.usuario_id == usuario.id).order_by(AccesoUsuario.fecha.desc()).limit(10).all()
+    return [_acceso(a) for a in filas]
+
+
+EVENTOS_ACCESO = {"INGRESO": "Inicio de sesión", "CAMBIO_CLAVE": "Cambio de clave", "RESTABLECIMIENTO": "Clave restablecida por correo",
+                  "SOPORTE": "Entrada en modo soporte"}
+
+
+def _navegador(agente: str) -> str:
+    """Nombre corto del navegador y sistema, a partir del User-Agent."""
+    a = agente or ""
+    nav = next((n for clave, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Brave", "Brave"), ("Chrome/", "Chrome"), ("Firefox/", "Firefox"), ("Safari/", "Safari")) if clave in a), "Otro navegador")
+    so = next((n for clave, n in (("Android", "Android"), ("iPhone", "iPhone"), ("iPad", "iPad"), ("Windows", "Windows"), ("Mac OS", "macOS"), ("Linux", "Linux")) if clave in a), "")
+    return f"{nav} · {so}" if so else nav
+
+
+def _registrar_acceso(db: Session, usuario: Usuario, evento: str, request: Request, organizacion_id: int | None = None) -> AccesoUsuario:
+    ahora = datetime.now()
+    db.query(AccesoUsuario).filter(AccesoUsuario.fecha < ahora - timedelta(days=180)).delete(synchronize_session=False)
+    acceso = AccesoUsuario(usuario_id=usuario.id, evento=evento, fecha=ahora, ip=_ip_cliente(request), organizacion_id=organizacion_id,
+                           navegador=_navegador(request.headers.get("user-agent", ""))[:200])
+    db.add(acceso)
+    return acceso
+
+
+def _acceso(a: AccesoUsuario, nombre: str | None = None) -> dict:
+    datos = {"fecha": a.fecha.isoformat(timespec="minutes"), "evento": EVENTOS_ACCESO.get(a.evento, a.evento), "ip": a.ip, "navegador": a.navegador}
+    if nombre is not None:
+        datos["usuario"] = nombre
+    return datos
+
+
+def _contacto_cuenta(telefono: str, correo_alterno: str, email: str) -> tuple[str | None, str | None]:
+    numero = _telefono_peru(telefono)
+    alterno = correo_alterno.strip().lower()
+    if alterno:
+        alterno = _validar_email(alterno)
+        if alterno == email.lower():
+            raise HTTPException(status_code=400, detail="El correo de respaldo debe ser distinto al correo con el que entras")
+    return numero, alterno or None
+
+
 @app.post("/api/auth/cambiar-clave")
 def cambiar_clave(
     body: CambioClaveIn,
+    request: Request,
     db: Session = Depends(get_db),
     usuario: Usuario = Depends(get_current_user),
 ):
@@ -783,8 +863,12 @@ def cambiar_clave(
     problema = problema_con_clave_nueva(body.clave_nueva)
     if problema:
         raise HTTPException(status_code=400, detail=problema)
+    primera = bool(usuario.debe_cambiar_clave)
     establecer_clave(usuario, body.clave_nueva, temporal=False)
+    acceso = _registrar_acceso(db, usuario, "CAMBIO_CLAVE", request)
     db.commit()
+    if not primera:  # el cambio de la clave temporal lo hace la propia persona al entrar por primera vez
+        correo.enviar_aviso_cambio(usuario.email, usuario.nombre, acceso.fecha.strftime("%d/%m/%Y %H:%M"), acceso.ip)
     # Las demás sesiones se cierran; esta continúa con un token nuevo.
     return {**_usuario(usuario), "token": create_token(usuario)}
 
@@ -823,7 +907,7 @@ def olvide_clave(body: OlvideClaveIn, request: Request, db: Session = Depends(ge
 
 
 @app.post("/api/auth/restablecer-clave")
-def restablecer_clave_con_enlace(body: RestablecerClaveIn, db: Session = Depends(get_db)):
+def restablecer_clave_con_enlace(body: RestablecerClaveIn, request: Request, db: Session = Depends(get_db)):
     usuario = db.query(Usuario).filter(Usuario.reset_token_hash == _hash_token(body.token)).first()
     if usuario is None:
         raise HTTPException(status_code=400, detail="El enlace no es válido o ya fue usado. Pide uno nuevo")
@@ -835,8 +919,9 @@ def restablecer_clave_con_enlace(body: RestablecerClaveIn, db: Session = Depends
     if problema:
         raise HTTPException(status_code=400, detail=problema)
     establecer_clave(usuario, body.clave_nueva, temporal=False)
+    acceso = _registrar_acceso(db, usuario, "RESTABLECIMIENTO", request)
     db.commit()
-    correo.enviar_aviso_cambio(usuario.email, usuario.nombre)
+    correo.enviar_aviso_cambio(usuario.email, usuario.nombre, acceso.fecha.strftime("%d/%m/%Y %H:%M"), acceso.ip)
     return {"ok": True, "email": usuario.email}
 
 
@@ -985,8 +1070,8 @@ def crear_lote(
             detail=f"{galpon.nombre} ya tiene un lote activo ({ocupado.linea}, ingreso {ocupado.fecha_ingreso.strftime('%d/%m/%Y')}). Ciérralo antes de abrir otro.",
         )
     poblacion = body.cantidad_recibida - body.descarte_llegada
-    if poblacion > galpon.capacidad:
-        raise HTTPException(status_code=400, detail=f"Los pollitos superan la capacidad de {galpon.nombre} ({galpon.capacidad} aves)")
+    if body.cantidad_recibida > galpon.capacidad:
+        raise HTTPException(status_code=400, detail=f"Los pollitos recibidos superan la capacidad de {galpon.nombre} ({galpon.capacidad:,} aves)".replace(",", " "))
     lote = Lote(
         galpon_id=body.galpon_id,
         linea=linea,
@@ -1006,6 +1091,7 @@ def crear_lote(
     )
     db.add(lote)
     db.flush()
+    evidencias.vincular(db, lote, body.adjuntos, usuario)
     plan_alimento(db, lote)
     # Ya vienen aplicadas: quedan «aplicadas · por revisar» para la conformidad del veterinario.
     for nombre in dict.fromkeys(body.vacunas_incubadora):
@@ -1092,6 +1178,18 @@ def panel(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depend
     return data
 
 
+@app.get("/api/lotes/{lote_id}/clima-exterior")
+def clima_exterior(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(cliente)):
+    """Clima actual de la zona de la granja y la mínima y máxima de las próximas 24 horas."""
+    granja = _cargar_lote(db, lote_id, usuario).galpon.granja
+    if granja.latitud is None or granja.longitud is None:
+        return {"disponible": False, "motivo": "Marca la ubicación de la granja en el mapa para ver el clima de la zona."}
+    clima = clima_local.consultar(granja.latitud, granja.longitud)
+    if clima is None:
+        return {"disponible": False, "motivo": "No se pudo consultar el clima de la zona en este momento."}
+    return {"disponible": True, "ubicacion": granja.ubicacion, "latitud": granja.latitud, "longitud": granja.longitud, **clima}
+
+
 @app.get("/api/lotes/{lote_id}/camara")
 def camara_lote(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(cliente)):
     lote = _cargar_lote(db, lote_id, usuario)
@@ -1163,6 +1261,7 @@ def crear_registro(
         # Dos envíos casi simultáneos del mismo día: el índice único detiene el segundo.
         db.rollback()
         raise HTTPException(status_code=400, detail="Ya hay un registro para esa fecha")
+    evidencias.vincular_registro(db, lote, registro.id, body.adjuntos, usuario)
     nuevas = evaluar_registro(db, lote, registro)
     db.commit()
     notificar_alertas(db, nuevas)
@@ -1179,12 +1278,16 @@ def crear_clima(
     lote = _cargar_lote(db, lote_id, usuario)
     if lote.estado != "ACTIVO":
         raise HTTPException(status_code=400, detail="El lote ya está cerrado")
+    granja = lote.galpon.granja
+    exterior = clima_local.consultar(granja.latitud, granja.longitud)
     lectura = LecturaAmbiental(
         galpon_id=lote.galpon_id,
         fecha_hora=datetime.now().replace(second=0, microsecond=0),
         temperatura=body.temperatura,
         humedad=body.humedad,
         origen="SIMULADO",
+        temp_exterior=exterior["temperatura"] if exterior else None,
+        humedad_exterior=exterior["humedad"] if exterior else None,
     )
     db.add(lectura)
     db.flush()
@@ -1193,7 +1296,8 @@ def crear_clima(
     notificar_alertas(db, nuevas)
     return {
         "ok": True,
-        "lectura": {"temperatura": lectura.temperatura, "humedad": lectura.humedad},
+        "lectura": {"temperatura": lectura.temperatura, "humedad": lectura.humedad,
+                    "temp_exterior": lectura.temp_exterior, "humedad_exterior": lectura.humedad_exterior},
         "alertas": [_alerta(a) for a in nuevas],
     }
 
@@ -1672,9 +1776,11 @@ def _alta(db: Session, body: UsuarioCrearIn, organizacion_id: int | None, permit
     if body.rol not in permitidos:
         raise HTTPException(status_code=400, detail="No puede crear cuentas con ese rol")
     usuario, clave_temporal = _nueva_cuenta(db, body.nombre, body.email, body.rol, organizacion_id, revelar)
+    usuario.telefono, usuario.correo_alterno = _contacto_cuenta(body.telefono, body.correo_alterno, usuario.email)
     db.commit()
     db.refresh(usuario)
-    return {"usuario": _usuario(usuario), "clave_temporal": clave_temporal}
+    enviado = correo.enviar_acceso(usuario.email, usuario.nombre, clave_temporal, usuario.organizacion.nombre if usuario.organizacion else None)
+    return {"usuario": _usuario(usuario), "clave_temporal": clave_temporal, "correo_enviado": enviado}
 
 
 def _verificar_gestion(usuario: Usuario, permitidos: tuple[str, ...]) -> None:
@@ -1687,7 +1793,8 @@ def _restablecer(db: Session, usuario: Usuario, permitidos: tuple[str, ...]) -> 
     clave_temporal = secrets.token_urlsafe(10)
     establecer_clave(usuario, clave_temporal, temporal=True)
     db.commit()
-    return {"usuario": _usuario(usuario), "clave_temporal": clave_temporal}
+    enviado = correo.enviar_acceso(usuario.email, usuario.nombre, clave_temporal, restablecida=True)
+    return {"usuario": _usuario(usuario), "clave_temporal": clave_temporal, "correo_enviado": enviado}
 
 
 def _cambiar_estado(db: Session, usuario: Usuario, activo: bool, actual: Usuario, ambito, permitidos: tuple[str, ...]) -> dict:
@@ -1891,12 +1998,36 @@ def crear_organizacion(body: OrganizacionIn, db: Session = Depends(get_db), _: U
     db.add(organizacion)
     db.flush()
     usuario, clave_temporal = _nueva_cuenta(db, body.productor_nombre, body.productor_email, "PRODUCTOR", organizacion.id)
+    usuario.telefono, usuario.correo_alterno = _contacto_cuenta(
+        body.productor_telefono or (solicitud.telefono if solicitud and solicitud.telefono else ""), body.productor_correo_alterno, usuario.email
+    )
     if solicitud is not None:
         solicitud.estado = "CLIENTE"
         solicitud.atendida_en = datetime.now()
     db.commit()
     db.refresh(organizacion)
-    return {"organizacion": _organizacion(db, organizacion), "usuario": _usuario(usuario), "clave_temporal": clave_temporal}
+    # Los datos de acceso le llegan al productor por correo; la plataforma también ve la clave una vez.
+    enviado = correo.enviar_acceso(usuario.email, usuario.nombre, clave_temporal, organizacion.nombre)
+    return {"organizacion": _organizacion(db, organizacion), "usuario": _usuario(usuario), "clave_temporal": clave_temporal, "correo_enviado": enviado}
+
+
+@app.get("/api/plataforma/organizaciones/{organizacion_id}/accesos")
+def accesos_cliente(organizacion_id: int, db: Session = Depends(get_db), _: Usuario = Depends(plataforma)):
+    """Últimos ingresos y cambios de clave del personal del cliente, y las entradas en modo soporte."""
+    organizacion = _cargar_organizacion(db, organizacion_id)
+    nombres = {u.id: u.nombre for u in organizacion.usuarios}
+    nombres.update({u.id: f"{u.nombre} (AviSmart)" for u in db.query(Usuario).filter(Usuario.rol == "PLATAFORMA")})
+    filas = (
+        db.query(AccesoUsuario)
+        .filter(or_(
+            AccesoUsuario.usuario_id.in_([u.id for u in organizacion.usuarios] or [0]),
+            and_(AccesoUsuario.evento == "SOPORTE", AccesoUsuario.organizacion_id == organizacion.id),
+        ))
+        .order_by(AccesoUsuario.fecha.desc())
+        .limit(30)
+        .all()
+    )
+    return [_acceso(a, nombres.get(a.usuario_id, "—")) for a in filas]
 
 
 @app.patch("/api/plataforma/organizaciones/{organizacion_id}")
@@ -1915,9 +2046,12 @@ def cambiar_estado_organizacion(
 
 
 @app.post("/api/plataforma/organizaciones/{organizacion_id}/soporte")
-def entrar_soporte(organizacion_id: int, db: Session = Depends(get_db), actual: Usuario = Depends(plataforma)):
+def entrar_soporte(organizacion_id: int, request: Request, db: Session = Depends(get_db), actual: Usuario = Depends(plataforma)):
     """Abre el sistema del cliente con los permisos de su productor, para configurarlo o ayudarlo."""
     organizacion = _cargar_organizacion(db, organizacion_id)
+    # RN-21: cada entrada queda en el historial de accesos del cliente.
+    _registrar_acceso(db, actual, "SOPORTE", request, organizacion.id)
+    db.commit()
     return {"token": create_token(actual, soporte_org=organizacion.id), "usuario": _usuario(UsuarioSoporte(actual, organizacion))}
 
 

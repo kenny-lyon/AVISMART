@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 RECEPCION = {"proveedor": "Incubadora San Fernando", "sexo": "MIXTO", "descarte_llegada": 0, "peso_llegada_g": 42, "precio_pollito": 2.1}
 from datetime import date, datetime, timedelta
@@ -8,6 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests.evidencia_prueba import guia
 from app.db import Base, get_db
 from app.main import app
 from app.models import (
@@ -129,11 +131,14 @@ class OrganizacionesTest(unittest.TestCase):
         solicitud_id = solicitud.id
         db.close()
 
-        alta = self.client.post("/api/plataforma/organizaciones", headers=dueno, json={
-            "nombre": "Granja Nueva SAC", "productor_nombre": "Ana Quispe", "productor_email": "ana@granjanueva.pe", "solicitud_id": solicitud_id,
-        })
+        with patch("app.main.correo.enviar_acceso", return_value=True) as correo_acceso:
+            alta = self.client.post("/api/plataforma/organizaciones", headers=dueno, json={
+                "nombre": "Granja Nueva SAC", "productor_nombre": "Ana Quispe", "productor_email": "ana@granjanueva.pe", "solicitud_id": solicitud_id,
+            })
         self.assertEqual(alta.status_code, 201, alta.text)
         self.assertEqual(alta.json()["usuario"]["rol"], "PRODUCTOR")
+        self.assertTrue(alta.json()["correo_enviado"])
+        correo_acceso.assert_called_once_with("ana@granjanueva.pe", "Ana Quispe", alta.json()["clave_temporal"], "Granja Nueva SAC")
         repetida = self.client.post("/api/plataforma/organizaciones", headers=dueno, json={
             "nombre": "Otra", "productor_nombre": "Otra Persona", "productor_email": "otra@granjanueva.pe", "solicitud_id": solicitud_id,
         })
@@ -142,14 +147,14 @@ class OrganizacionesTest(unittest.TestCase):
         self.assertEqual(estado, "CLIENTE")
 
         temporal = self.entrar("ana@granjanueva.pe", alta.json()["clave_temporal"])
-        self.client.post("/api/auth/cambiar-clave", headers=temporal, json={"clave_actual": alta.json()["clave_temporal"], "clave_nueva": "ClavePropia12345"})
-        ana = self.entrar("ana@granjanueva.pe", "ClavePropia12345")
+        self.client.post("/api/auth/cambiar-clave", headers=temporal, json={"clave_actual": alta.json()["clave_temporal"], "clave_nueva": "ClavePropia#12"})
+        ana = self.entrar("ana@granjanueva.pe", "ClavePropia#12")
         self.assertEqual(self.client.get("/api/resumen", headers=ana).json()["lotes"], [])
         granja = self.client.post("/api/granjas", headers=ana, json={"nombre": "Granja Nueva", "ubicacion": "Juliaca"})
         self.assertEqual(granja.status_code, 201, granja.text)
         galpon = self.client.post(f"/api/granjas/{granja.json()['id']}/galpones", headers=ana, json={"nombre": "Galpón A", "capacidad": 3000})
         self.assertEqual(galpon.status_code, 201, galpon.text)
-        lote = self.client.post("/api/lotes", headers=ana, json={**RECEPCION, "galpon_id": galpon.json()["id"], "linea": "Cobb", "fecha_ingreso": date.today().isoformat(), "cantidad_recibida": 2500})
+        lote = self.client.post("/api/lotes", headers=ana, json={**RECEPCION, "galpon_id": galpon.json()["id"], "linea": "Cobb", "fecha_ingreso": date.today().isoformat(), "cantidad_recibida": 2500, "adjuntos": [guia(self.client, ana)]})
         self.assertEqual(lote.status_code, 200, lote.text)
 
         self.assertEqual(self.client.post("/api/usuarios", headers=dueno, json={"nombre": "Colado", "email": "x@y.pe", "rol": "ADMIN"}).status_code, 400)
@@ -228,7 +233,8 @@ class OrganizacionesTest(unittest.TestCase):
     def test_un_lote_activo_por_galpon_y_datos_de_recepcion(self):
         prod = self.entrar("productor@a.pe")
         a = self.ids["a"]
-        nuevo = {**RECEPCION, "galpon_id": a["galpon"], "linea": "Cobb", "fecha_ingreso": date.today().isoformat(), "cantidad_recibida": 600}
+        nuevo = {**RECEPCION, "galpon_id": a["galpon"], "linea": "Cobb", "fecha_ingreso": date.today().isoformat(), "cantidad_recibida": 600,
+                 "adjuntos": [guia(self.client, prod)]}
         ocupado = self.client.post("/api/lotes", headers=prod, json=nuevo)
         self.assertEqual(ocupado.status_code, 400)
         self.assertIn("ya tiene un lote activo", ocupado.json()["detail"])
@@ -238,11 +244,15 @@ class OrganizacionesTest(unittest.TestCase):
         self.assertEqual(self.client.post("/api/lotes", headers=prod, json={**base, "cantidad_recibida": 1100}).status_code, 400)
         self.assertEqual(self.client.post("/api/lotes", headers=prod, json={**base, "fecha_ingreso": "2099-01-01"}).status_code, 400)
         self.assertEqual(self.client.post("/api/lotes", headers=prod, json={**base, "sexo": "OTRO"}).status_code, 400)
-        creado = self.client.post("/api/lotes", headers=prod, json={**base, "cantidad_recibida": 1020, "descarte_llegada": 25, "guia": "G-001"})
+        # Los recibidos no pueden superar la capacidad aunque luego se descarten algunos.
+        self.assertEqual(self.client.post("/api/lotes", headers=prod, json={**base, "cantidad_recibida": 1020, "descarte_llegada": 25}).status_code, 400)
+        sin_guia = self.client.post("/api/lotes", headers=prod, json={**base, "cantidad_recibida": 1000, "adjuntos": []})
+        self.assertIn("guía de remisión", sin_guia.json()["detail"], "la evidencia de la guía es obligatoria")
+        creado = self.client.post("/api/lotes", headers=prod, json={**base, "cantidad_recibida": 1000, "descarte_llegada": 25, "guia": "G-001"})
         self.assertEqual(creado.status_code, 200, creado.text)
         lote = creado.json()
-        self.assertEqual(lote["poblacion_inicial"], 995)
-        self.assertEqual(lote["costo_pollitos"], round(1020 * 2.1, 2))
+        self.assertEqual(lote["poblacion_inicial"], 975)
+        self.assertEqual(lote["costo_pollitos"], round(1000 * 2.1, 2))
         self.assertEqual(lote["proveedor"], "Incubadora San Fernando")
         self.assertEqual(self.client.post("/api/lotes", headers=prod, json=base).status_code, 400)
 

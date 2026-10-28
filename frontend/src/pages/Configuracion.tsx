@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { api, type Rol } from "../api";
 import { useAuth } from "../auth";
 import Cuentas from "../components/Cuentas";
+import MiCuenta from "../components/MiCuenta";
 import TelegramCliente from "../components/TelegramCliente";
 import { Campo, PageHeader, Panel, Tabs, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import { valorCampo } from "../textos";
 
 /** Qué cuentas crea y gestiona cada rol del cliente (lo mismo que valida el backend). */
 const PERSONAL: Partial<Record<Rol, { crea: Rol[]; gestiona: Rol[] }>> = {
@@ -23,8 +25,10 @@ export default function Configuracion() {
     ...(personal ? [{ id: "cuentas", label: "Personal" }] : []),
     ...(veUmbral ? [{ id: "parametros", label: "Parámetros de alerta" }] : []),
     ...(personal ? [{ id: "notificaciones", label: "Notificaciones" }] : []),
+    { id: "cuenta", label: "Mi cuenta" },
   ];
-  const [pestana, setPestana] = useState(pestanas[0]?.id ?? "parametros");
+  const pedida = new URLSearchParams(window.location.search).get("pestana");
+  const [pestana, setPestana] = useState(pestanas.some((p) => p.id === pedida) ? pedida! : pestanas[0].id);
   const [umbral, setUmbral] = useState(String(resumen?.umbral_mortalidad ?? 20));
   const [guardando, setGuardando] = useState(false);
 
@@ -49,11 +53,13 @@ export default function Configuracion() {
   return (
     <>
       <PageHeader
-        titulo={personal ? "Personal y ajustes" : "Parámetros de alerta"}
+        titulo={personal ? "Personal y ajustes" : veUmbral ? "Parámetros y cuenta" : "Mi cuenta"}
         descripcion={
           personal
             ? `Cuentas del personal de ${resumen?.organizacion.nombre ?? "la organización"}.`
-            : "El valor clínico que dispara las alertas de salud del lote."
+            : veUmbral
+              ? "El valor clínico que dispara las alertas de salud y los datos de tu cuenta."
+              : "Tus datos de contacto y tus últimos accesos."
         }
       />
       {pestanas.length > 1 && (
@@ -77,11 +83,13 @@ export default function Configuracion() {
 
       {pestana === "notificaciones" && personal && <TelegramCliente />}
 
+      {pestana === "cuenta" && <MiCuenta />}
+
       {pestana === "parametros" && veUmbral && (
         <Panel titulo="Umbral de mortalidad diaria" descripcion="Lo define el médico veterinario según el estado sanitario del lote.">
           <form onSubmit={guardar} style={{ maxWidth: 420 }}>
             <Campo label="Aves muertas en un día que disparan alerta de salud" ayuda="Se compara con cada registro del día.">
-              <input type="number" min="1" max="500" value={umbral} onChange={(e) => setUmbral(e.target.value)} required />
+              <input type="number" min="1" max="500" value={umbral} onChange={(e) => setUmbral(valorCampo(e))} required />
             </Campo>
             <button className="btn" type="submit" disabled={guardando} style={{ marginTop: 16 }}>
               {guardando ? "Guardando…" : "Guardar umbral"}

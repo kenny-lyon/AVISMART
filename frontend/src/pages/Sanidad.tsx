@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, fecha, hoyLocal, num, type Tratamiento, type Vacuna } from "../api";
 import { useAuth } from "../auth";
 import { Campo, Drawer, DrawerForm, Estado, Icon, PageHeader, Panel, Seccion, Tabs, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
+import { valorCampo } from "../textos";
 
 type VacunaCatalogo = { nombre: string; via: string; dia: number; nota: string };
 type Medicamento = { nombre: string; uso: string; dosis: string[]; vias: string[]; dias: number; carencia: number };
@@ -58,6 +60,18 @@ export default function Sanidad() {
   useEffect(() => {
     api<{ vacunas: VacunaCatalogo[]; medicamentos: Medicamento[] }>("/catalogo/sanidad").then(setCatalogo).catch(() => undefined);
   }, []);
+
+  // Desde «Revisión de bajas» (posible brote): abre la receta con el diagnóstico ya escrito.
+  const [parametros, setParametros] = useSearchParams();
+  useEffect(() => {
+    if (!parametros.get("indicar") || !vetActivo) return;
+    setError("");
+    setTrat({ ...TRAT_VACIO, inicio: hoyLocal(), diagnostico: parametros.get("diagnostico") ?? "" });
+    setNuevoTrat(true);
+    setPestana("tratamientos");
+    setParametros({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vetActivo]);
 
   const producto = catalogo.medicamentos.find((m) => m.nombre === trat.medicamento) ?? null;
   const vacunaElegida = catalogo.vacunas.find((v) => v.nombre === vac.nombre) ?? null;
@@ -435,13 +449,13 @@ export default function Sanidad() {
             />
           </Campo>
           <Campo label="Días de tratamiento">
-            <input type="number" min="1" max="30" value={trat.dias} onChange={(e) => setTrat({ ...trat, dias: e.target.value })} required />
+            <input type="number" min="1" max="30" value={trat.dias} onChange={(e) => setTrat({ ...trat, dias: valorCampo(e) })} required />
           </Campo>
           <Campo label="Días de carencia" ayuda={producto ? `Sugerido: ${producto.carencia} días. Confirma con la etiqueta del frasco.` : "Según la etiqueta del producto."}>
-            <input type="number" min="0" max="60" value={trat.carencia} onChange={(e) => setTrat({ ...trat, carencia: e.target.value })} required />
+            <input type="number" min="0" max="60" value={trat.carencia} onChange={(e) => setTrat({ ...trat, carencia: valorCampo(e) })} required />
           </Campo>
           <Campo label="Aves tratadas" ayuda="Vacío = todo el lote.">
-            <input type="number" min="1" value={trat.aves} onChange={(e) => setTrat({ ...trat, aves: e.target.value })} />
+            <input type="number" min="1" max="100000" value={trat.aves} onChange={(e) => setTrat({ ...trat, aves: valorCampo(e) })} />
           </Campo>
         </Seccion>
       </DrawerForm>

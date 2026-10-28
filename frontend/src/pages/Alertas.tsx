@@ -3,7 +3,7 @@ import { api, avisarCambios, fecha, type Alerta } from "../api";
 import { useAuth } from "../auth";
 import { Campo, Drawer, Estado, PageHeader, Panel, Tabs, Vacio, mensajeError, useToast } from "../components/ui";
 
-const TIPOS: Record<string, string> = { SALUD: "Salud", RECORDATORIO: "Vacuna", AMBIENTE: "Ambiente", CRECIMIENTO: "Crecimiento" };
+const TIPOS: Record<string, string> = { SALUD: "Salud", RECORDATORIO: "Vacuna", AMBIENTE: "Ambiente", CRECIMIENTO: "Crecimiento", VISITA: "Visita" };
 
 export default function Alertas() {
   const { usuario } = useAuth();
@@ -87,7 +87,7 @@ export default function Alertas() {
               </thead>
               <tbody>
                 {visibles.map((a) => (
-                  <tr key={a.id} className={`clicable ${a.estado === "ATENDIDA" ? "" : a.tipo === "SALUD" ? "fila-riesgo" : a.tipo === "RECORDATORIO" ? "fila-alerta" : "fila-info"}`} onClick={() => { setError(""); setNota(""); setDetalle(a); }}>
+                  <tr key={a.id} className={`clicable ${a.estado === "ATENDIDA" ? "" : a.tipo === "SALUD" ? "fila-riesgo" : a.tipo === "RECORDATORIO" || a.tipo === "VISITA" ? "fila-alerta" : "fila-info"}`} onClick={() => { setError(""); setNota(""); setDetalle(a); }}>
                     <td><Estado valor={a.tipo} texto={TIPOS[a.tipo] ?? a.tipo} /></td>
                     <td className="celda-principal">
                       <strong>{a.mensaje}</strong>

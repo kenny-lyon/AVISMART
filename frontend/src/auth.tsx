@@ -9,6 +9,7 @@ type AuthState = {
   salir: () => void;
   entrarSoporte: (organizacionId: number) => Promise<void>;
   salirSoporte: () => Promise<void>;
+  actualizarUsuario: (u: Usuario) => void;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -73,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, listo, entrar, cambiarClave, salir, entrarSoporte, salirSoporte }}>
+    <AuthContext.Provider value={{ usuario, listo, entrar, cambiarClave, salir, entrarSoporte, salirSoporte, actualizarUsuario: setUsuario }}>
       {children}
     </AuthContext.Provider>
   );

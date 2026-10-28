@@ -4,6 +4,7 @@ import { api, num, type Galpon, type Granja } from "../api";
 import { Campo, DrawerForm, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
 import UbicacionGranja, { type Ubicacion } from "../components/UbicacionGranja";
+import { LARGO_NOMBRE, sinCerosIzquierda, textoDe } from "../textos";
 
 const SIN_UBICACION: Ubicacion = { departamento: "", provincia: "", distrito: "", latitud: null, longitud: null };
 
@@ -191,7 +192,7 @@ export default function Instalaciones() {
         <Seccion titulo={esGranja ? "Granja avícola" : "Galpón"}>
           {esGranja ? (
             <Campo label="Nombre" ancho>
-              <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Granja avícola San Fernando" required minLength={3} />
+              <input value={nombre} onChange={(e) => setNombre(textoDe(e, "lugar", nombre))} maxLength={LARGO_NOMBRE} placeholder="Granja avícola San Fernando" required minLength={3} />
             </Campo>
           ) : (
             <Campo label="Galpón" ancho ayuda={editando ? "El número del galpón no cambia." : `Se numera solo, en orden. Máximo ${MAX_GALPONES} galpones por granja avícola.`}>
@@ -210,7 +211,8 @@ export default function Instalaciones() {
                 value={extra}
                 onChange={(e) => {
                   // Solo dígitos y nunca más de 100 000: no deja seguir escribiendo ceros.
-                  const digitos = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  const digitos = sinCerosIzquierda(e.target.value.replace(/\D/g, "")).slice(0, 6);
+                  if (digitos !== e.target.value) e.target.value = digitos;
                   setExtra(digitos && Number(digitos) > MAX_CAPACIDAD ? String(MAX_CAPACIDAD) : digitos);
                 }}
                 placeholder="6000"

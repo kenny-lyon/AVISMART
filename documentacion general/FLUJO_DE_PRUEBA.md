@@ -120,8 +120,16 @@ Cuenta: `veterinario@avismart.local`
      - Inicio prolongado por el peso bajo del día 16;
      - alimento de retiro por el tratamiento.
    - Pulsar **Variar plan**, cambiar por ejemplo el producto de Retiro, escribir el motivo y guardar → aparece en el historial.
-6. **Alertas:** las de *Salud* del día 24 aparecen atendidas por él. Las de *Ambiente* y *Crecimiento* las ve como "Ver", porque las atiende el productor.
-7. **Parámetros de alerta:** el umbral de mortalidad diaria está en **20**. Solo el veterinario puede cambiarlo.
+6. **Revisión de bajas:**
+   - **Por revisar** muestra el día 39 (y el de hoy si el operario ya registró), con las fotos de las bajas que subió el personal. En **Revisados** está el historial: el día 24 como **Posible brote** (enfermedad respiratoria, con la necropsia) y los demás como **Mortalidad normal**, con la causa según la edad.
+   - Pulsar **Evaluar** en el día pendiente y probar los tres dictámenes:
+     - **Mortalidad normal** + causa *Síndrome ascítico (mal de altura)* → pasa a **Revisados**.
+     - **Requiere visita** + causa + fecha de mañana → al productor le llega la alerta **Visita** con la fecha.
+     - **Posible brote** + causa + indicaciones (por ejemplo, "Aislar el galpón y retirar las aves muertas dos veces al día") → se avisa con alerta de **Salud** al productor y al personal, y se abre **Indicar tratamiento** con el diagnóstico ya escrito.
+   - Opcional: adjuntar fotos de la necropsia en **Tus evidencias**.
+   - **Debe verse:** la alerta de mortalidad de ese día se cierra sola con el dictamen, y en el **Panel** la columna *Revisión del veterinario* muestra el resultado.
+7. **Alertas:** las de *Salud* del día 24 aparecen atendidas por él. Las de *Ambiente* y *Crecimiento* las ve como "Ver", porque las atiende el productor.
+8. **Parámetros de alerta:** el umbral de mortalidad diaria está en **20**. Solo el veterinario puede cambiarlo.
 
 ---
 
@@ -144,7 +152,9 @@ Cuenta: `operario@avismart.local`
    |---|---|---|---|
    | 2 | 1035 | 1900 | 2960 |
 
-   **Debe verse:** se guarda sin alertas y el Panel se actualiza.
+   - **Evidencias (opcionales):** en cada sección se puede adjuntar una foto o PDF: *Fotos de las bajas*, *Alimento y agua* (sacos, balanza, medidor) y *Pesaje de la muestra*.
+
+   **Debe verse:** se guarda sin alertas y el Panel se actualiza. En **Lotes → Evidencias** del Galpón 01, la sección **5. Registros del día** muestra los archivos con la fecha del día al que pertenecen.
 3. **Alimentación:** el plan del lote en modo consulta. Solo el veterinario lo puede variar.
 4. **Cámara:** el Galpón 01 sin señal (cámara simulada) y la última lectura de clima.
 5. **Debe verse:** el operario no tiene Lotes, Granjas ni Personal, y no puede atender alertas.
@@ -176,6 +186,8 @@ Cuenta: `productor@avismart.local`. Con el lote en el día 40 y la saca prevista
    - Incubadora: elegir de la lista (por ejemplo, **Avinka**) o escribir otra.
    - **Vacunas de la incubadora:** marcar *Marek (HVT)*. Al abrir el lote aparece en Sanidad como **Aplicada · por revisar**.
    - Recibidos 5.000, descartados 30, peso al llegar 42 g, precio S/ 2.30.
+   - **Evidencias:** adjuntar una foto o PDF de la **guía de remisión** (obligatoria; sin ella no se abre el lote) y, si se quiere, fotos del galpón preparado, el certificado de vacunación y fotos de la recepción.
+4. En la lista de lotes, pulsar **Evidencias** en el lote del Galpón 01: aparecen la guía de remisión y el certificado de vacunación (PDF) de la demostración.
 
 > Si no se quiere cerrar el lote durante la presentación, basta con mostrar el formulario y pulsar **Cancelar**.
 

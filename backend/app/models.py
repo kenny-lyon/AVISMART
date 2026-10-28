@@ -44,9 +44,27 @@ class Usuario(Base):
     reset_expira: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Vacío solo para las cuentas PLATAFORMA (propietario de AviSmart).
     organizacion_id: Mapped[int | None] = mapped_column(ForeignKey("organizaciones.id"), nullable=True, index=True)
+    # Contacto para verificar la identidad si la cuenta se ve comprometida (opcionales).
+    telefono: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    correo_alterno: Mapped[str | None] = mapped_column(String(160), nullable=True)
 
     organizacion: Mapped[Organizacion | None] = relationship(back_populates="usuarios")
     registros: Mapped[list["RegistroDiario"]] = relationship(back_populates="usuario")
+
+
+class AccesoUsuario(Base):
+    """Historial de ingresos y cambios de clave: cuándo, desde qué conexión y con qué navegador."""
+
+    __tablename__ = "accesos_usuario"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
+    evento: Mapped[str] = mapped_column(String(20))  # INGRESO · CAMBIO_CLAVE · RESTABLECIMIENTO · SOPORTE
+    # Solo en SOPORTE: el cliente al que entró la cuenta de plataforma.
+    organizacion_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    fecha: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    navegador: Mapped[str] = mapped_column(String(200), default="")
 
 
 class IntentoLogin(Base):
@@ -249,6 +267,9 @@ class LecturaAmbiental(Base):
     temperatura: Mapped[float] = mapped_column(Float)
     humedad: Mapped[float] = mapped_column(Float)
     origen: Mapped[str] = mapped_column(String(20), default="SIMULADO")
+    # Clima de la zona en ese momento (Open-Meteo), para comparar interior y exterior.
+    temp_exterior: Mapped[float | None] = mapped_column(Float, nullable=True)
+    humedad_exterior: Mapped[float | None] = mapped_column(Float, nullable=True)
     galpon: Mapped[Galpon] = relationship(back_populates="lecturas")
 
 
@@ -306,3 +327,42 @@ class CambioAlimento(Base):
     fecha: Mapped[datetime] = mapped_column(DateTime)
     motivo: Mapped[str] = mapped_column(Text)
     detalle: Mapped[str] = mapped_column(Text, default="")
+
+
+class RevisionBajas(Base):
+    """Dictamen del veterinario sobre las bajas de un día: normal, requiere visita o posible brote."""
+
+    __tablename__ = "revisiones_bajas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    registro_id: Mapped[int] = mapped_column(ForeignKey("registros_diarios.id"), unique=True, index=True)
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    veterinario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    dictamen: Mapped[str] = mapped_column(String(20))  # NORMAL · VISITA · BROTE
+    causa: Mapped[str] = mapped_column(String(80))
+    observaciones: Mapped[str] = mapped_column(Text, default="")
+    fecha_visita: Mapped[date | None] = mapped_column(Date, nullable=True)
+    creada_en: Mapped[datetime] = mapped_column(DateTime)
+
+
+class AdjuntoLote(Base):
+    """Evidencia de la apertura del lote: guía de remisión, certificados y fotos.
+
+    Se sube primero como temporal (sin lote) mientras se llena el formulario y se vincula al abrir el lote.
+    """
+
+    __tablename__ = "adjuntos_lote"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organizacion_id: Mapped[int] = mapped_column(ForeignKey("organizaciones.id"), index=True)
+    lote_id: Mapped[int | None] = mapped_column(ForeignKey("lotes.id"), nullable=True, index=True)
+    seccion: Mapped[str] = mapped_column(String(20))  # GALPON · GUIA · ORIGEN · VACUNAS · RECEPCION · BAJAS · CONSUMO · PESAJE
+    # Solo en BAJAS, CONSUMO y PESAJE: el registro del día al que pertenece.
+    registro_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    nombre: Mapped[str] = mapped_column(String(160))
+    tipo: Mapped[str] = mapped_column(String(40))
+    tamano: Mapped[int] = mapped_column(Integer)
+    ruta: Mapped[str] = mapped_column(String(200))
+    subido_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+    subido_en: Mapped[datetime] = mapped_column(DateTime)
+

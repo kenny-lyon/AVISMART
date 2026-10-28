@@ -101,11 +101,26 @@ def get_current_user(
     return usuario
 
 
+# Tope = largo de las claves que sugiere Google Chrome (15); las temporales de AviSmart tienen 14.
+CLAVE_MIN, CLAVE_MAX = 8, 15
+
+
 def problema_con_clave_nueva(clave: str) -> str | None:
-    if len(clave) < 10:
-        return "La clave debe tener al menos 10 caracteres"
+    """Mismas reglas que muestra la pantalla: largo, letras, números y símbolos, y nada de caracteres repetidos."""
+    if len(clave) < CLAVE_MIN:
+        return f"La clave debe tener al menos {CLAVE_MIN} caracteres"
+    if len(clave) > CLAVE_MAX:
+        return f"La clave puede tener como máximo {CLAVE_MAX} caracteres"
     if clave != clave.strip():
         return "La clave no puede empezar ni terminar con espacios"
+    if not any(c.isalpha() for c in clave) or not any(c.isdigit() for c in clave):
+        return "La clave debe combinar letras, números y símbolos"
+    if not any(not c.isalnum() and not c.isspace() for c in clave):
+        return "La clave debe incluir al menos un símbolo (por ejemplo # . - @)"
+    if len(set(clave.lower())) < 5:
+        return "La clave repite demasiado los mismos caracteres. Usa al menos 5 distintos"
+    if any(clave[i] == clave[i + 1] == clave[i + 2] == clave[i + 3] for i in range(len(clave) - 3)):
+        return "La clave no puede repetir el mismo carácter más de 3 veces seguidas"
     return None
 
 
