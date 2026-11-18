@@ -40,6 +40,11 @@ def generar_pdf(lote, cierre, panel, registros, vacunas, tratamientos, alertas) 
         ["Peso promedio de venta", f'{cierre.peso_total_kg * 1000 / cierre.aves_vendidas:,.0f} g', "EPEF", panel["epef"] or "—"],
         ["Último pesaje", f'{panel["peso_actual_g"]:.0f} g', "Peso total vendido", f"{cierre.peso_total_kg:,.1f} kg"],
     ]
+    if cierre.peso_canal_kg:
+        resumen.append(["Rendimiento de canal", f"{cierre.peso_canal_kg / cierre.peso_total_kg * 100:.1f} %", "Peso de canal", f"{cierre.peso_canal_kg:,.1f} kg"])
+    if cierre.decomisos_aves is not None or cierre.pododermatitis_pct is not None:
+        resumen.append(["Decomisos", cierre.decomisos_aves if cierre.decomisos_aves is not None else "—", "Pododermatitis",
+                        f"{cierre.pododermatitis_pct:.1f} %" if cierre.pododermatitis_pct is not None else "—"])
     tabla = Table(resumen, colWidths=[38 * mm, 48 * mm, 38 * mm, 48 * mm])
     tabla.setStyle(_estilo_tabla())
     elementos.extend([tabla, Spacer(1, 5 * mm), Paragraph("Recepción de pollitos", estilos["Heading2"])])
@@ -213,19 +218,19 @@ def generar_excel(lote, cierre, panel, registros, vacunas, tratamientos, alertas
         recepcion.append(fila)
 
     hoja = libro.create_sheet("Registros diarios")
-    hoja.append(["Fecha", "Mortalidad", "Alimento kg", "Agua L", "Peso muestra g", "Tipo de alimento"])
+    hoja.append(["Fecha", "Mortalidad", "Sacrificadas", "Alimento kg", "Agua L", "Peso muestra g", "Uniformidad %", "Horas de luz", "Tipo de alimento"])
     for r in registros:
-        hoja.append([r.fecha, r.mortalidad, r.alimento_kg, r.agua_l, r.peso_muestra_g, r.fase_alimento or ""])
+        hoja.append([r.fecha, r.mortalidad, r.descartadas or 0, r.alimento_kg, r.agua_l, r.peso_muestra_g, r.uniformidad_pct, r.horas_luz, r.fase_alimento or ""])
     if registros:
         grafico = LineChart()
         grafico.title = "Evolución del peso de muestra"
         grafico.y_axis.title = "Peso (g)"
         grafico.x_axis.title = "Fecha"
-        datos = Reference(hoja, min_col=5, min_row=1, max_row=1 + len(registros))
+        datos = Reference(hoja, min_col=6, min_row=1, max_row=1 + len(registros))
         categorias = Reference(hoja, min_col=1, min_row=2, max_row=1 + len(registros))
         grafico.add_data(datos, titles_from_data=True)
         grafico.set_categories(categorias)
-        hoja.add_chart(grafico, "H2")
+        hoja.add_chart(grafico, "K2")
 
     sanidad = libro.create_sheet("Sanidad")
     sanidad.append(["Tipo", "Nombre", "Fecha programada / inicio", "Aplicada", "Estado", "Detalle"])

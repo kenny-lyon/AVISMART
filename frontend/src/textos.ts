@@ -46,6 +46,11 @@ export function alEscribir(tipo: Tipo) {
   };
 }
 
+/** Celular peruano: solo dígitos y como máximo 9 ("987 654-321a" → "987654321"). */
+export function soloCelular(valor: string): string {
+  return valor.replace(/\D/g, "").slice(0, 9);
+}
+
 /** Números: quita los ceros a la izquierda ("039493" → "39493", "007.5" → "7.5"); deja "0" y "0.5". */
 export function sinCerosIzquierda(valor: string): string {
   return valor.replace(/^0+(?=\d)/, "");

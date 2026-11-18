@@ -127,6 +127,8 @@ class Granja(Base):
     distrito: Mapped[str | None] = mapped_column(String(80), nullable=True)
     latitud: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitud: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Metros sobre el nivel del mar, según las coordenadas: principal factor de riesgo de ascitis.
+    altitud_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     organizacion_id: Mapped[int | None] = mapped_column(ForeignKey("organizaciones.id"), nullable=True, index=True)
     organizacion: Mapped[Organizacion | None] = relationship(back_populates="granjas")
     galpones: Mapped[list["Galpon"]] = relationship(back_populates="granja")
@@ -142,6 +144,9 @@ class Galpon(Base):
     camara_nombre: Mapped[str] = mapped_column(String(120), default="Cámara principal")
     camara_modo: Mapped[str] = mapped_column(String(20), default="SIMULADA")
     camara_activa: Mapped[int] = mapped_column(Integer, default=1)
+    # Sensor IoT del galpón: resumen SHA-256 de su clave (la clave no se guarda) y último envío recibido.
+    sensor_clave_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    sensor_ultimo_envio: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     granja: Mapped[Granja] = relationship(back_populates="galpones")
     lotes: Mapped[list["Lote"]] = relationship(back_populates="galpon")
     lecturas: Mapped[list["LecturaAmbiental"]] = relationship(back_populates="galpon")
@@ -190,6 +195,10 @@ class CierreLote(Base):
     costo_alimento: Mapped[float] = mapped_column(Float)
     costo_sanidad: Mapped[float] = mapped_column(Float)
     otros_costos: Mapped[float] = mapped_column(Float)
+    # Datos del camal (opcionales): la verdad final de la campaña.
+    peso_canal_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decomisos_aves: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pododermatitis_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_costos: Mapped[float] = mapped_column(Float)
     margen: Mapped[float] = mapped_column(Float)
     observaciones: Mapped[str] = mapped_column(Text, default="")
@@ -213,6 +222,15 @@ class RegistroDiario(Base):
     peso_muestra_g: Mapped[float] = mapped_column(Float)
     # Fase de alimento que se dio ese día (Preinicio, Inicio, Crecimiento, Acabado o Retiro).
     fase_alimento: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # De las bajas del día, cuántas se sacrificaron por débiles o cojas (el resto murió solo).
+    descartadas: Mapped[int] = mapped_column(Integer, default=0)
+    horas_luz: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Calculados de los pesos individuales de la muestra, si se anotaron.
+    muestra_aves: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    muestra_cv: Mapped[float | None] = mapped_column(Float, nullable=True)
+    uniformidad_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Pesos de la muestra en JSON: {"mixto": [...]}, {"machos": [...], "hembras": [...]} o {"grupos": [{"aves", "kg"}]}.
+    muestra_pesos: Mapped[str | None] = mapped_column(Text, nullable=True)
     lote: Mapped[Lote] = relationship(back_populates="registros")
     usuario: Mapped[Usuario] = relationship(back_populates="registros")
 
@@ -270,6 +288,10 @@ class LecturaAmbiental(Base):
     # Clima de la zona en ese momento (Open-Meteo), para comparar interior y exterior.
     temp_exterior: Mapped[float | None] = mapped_column(Float, nullable=True)
     humedad_exterior: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Solo del sensor del galpón, si tiene esos módulos.
+    co2_ppm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nh3_ppm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agua_l: Mapped[float | None] = mapped_column(Float, nullable=True)  # litros desde el envío anterior
     galpon: Mapped[Galpon] = relationship(back_populates="lecturas")
 
 
@@ -327,6 +349,50 @@ class CambioAlimento(Base):
     fecha: Mapped[datetime] = mapped_column(DateTime)
     motivo: Mapped[str] = mapped_column(Text)
     detalle: Mapped[str] = mapped_column(Text, default="")
+
+
+class MedicionOxigeno(Base):
+    """Saturación de oxígeno (SpO2) de una muestra de aves, medida por el veterinario."""
+
+    __tablename__ = "mediciones_oxigeno"
+    __table_args__ = (UniqueConstraint("lote_id", "fecha", name="uq_oxigeno_lote_fecha"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    fecha: Mapped[date] = mapped_column(Date)
+    aves_medidas: Mapped[int] = mapped_column(Integer)
+    spo2_promedio: Mapped[float] = mapped_column(Float)
+    spo2_minimo: Mapped[float | None] = mapped_column(Float, nullable=True)
+    nota: Mapped[str] = mapped_column(Text, default="")
+    veterinario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))
+
+
+class PesadaBalanza(Base):
+    """Peso de un ave que se subió a la balanza automática del galpón. Las descartadas se guardan con su motivo."""
+
+    __tablename__ = "pesadas_balanza"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    galpon_id: Mapped[int] = mapped_column(ForeignKey("galpones.id"), index=True)
+    lote_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    fecha_hora: Mapped[datetime] = mapped_column(DateTime, index=True)
+    peso_g: Mapped[float] = mapped_column(Float)
+    # None = válida; LIVIANA = el ave subía o bajaba; DOBLE = dos aves a la vez.
+    descarte: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+
+class FotoGalpon(Base):
+    """Foto periódica de la cámara del galpón. La etiqueta queda libre para entrenar modelos de imagen."""
+
+    __tablename__ = "fotos_galpon"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    galpon_id: Mapped[int] = mapped_column(ForeignKey("galpones.id"), index=True)
+    lote_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    fecha_hora: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ruta: Mapped[str] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(40))
+    etiqueta: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class RevisionBajas(Base):

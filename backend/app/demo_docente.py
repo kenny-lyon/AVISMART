@@ -15,6 +15,7 @@ Deja:
 Solo toca los datos productivos de «Demostración»; las cuentas y los demás clientes no se modifican.
 Antes de cambiar nada guarda una copia de la base en backend/respaldos/.
 """
+import json
 import random
 import shutil
 import uuid
@@ -36,12 +37,14 @@ from .models import (
     LecturaAmbiental,
     Lote,
     Organizacion,
+    MedicionOxigeno,
     RegistroDiario,
     RevisionBajas,
     Tratamiento,
     Usuario,
     Vacunacion,
 )
+from .pesaje import estadisticas
 from .security import establecer_clave, verify_password
 
 CLAVE_DEMO = "avismart123"
@@ -50,6 +53,8 @@ CUENTAS_DEMO = ("productor@avismart.local", "operario@avismart.local", "veterina
 CONSUMO = [(1, 13), (7, 35), (14, 67), (21, 106), (28, 146), (35, 181), (42, 206), (49, 222)]
 
 rnd = random.Random(2026)
+extra = random.Random(7)
+muestras = random.Random(11)
 
 
 def _interpolar(puntos, dia):
@@ -59,6 +64,20 @@ def _interpolar(puntos, dia):
         if dia <= d1:
             return v0 + (v1 - v0) * (dia - d0) / (d1 - d0)
     return puntos[-1][1]
+
+
+def _muestra_semanal(dia: int, peso: float) -> dict:
+    """Pesaje semanal: en grupo hasta el día 21 y ave por ave después (50 aves, CV entre 6,5 y 9,5 %).
+    La muestra se centra en `peso` para no cambiar el peso del registro que cita el flujo de prueba."""
+    if dia <= 21:
+        grupos = [{"aves": 10, "kg": round(peso * 10 / 1000, 2)} for _ in range(5)]
+        return {"muestra_aves": 50, "muestra_pesos": json.dumps({"grupos": grupos})}
+    cv = muestras.uniform(6.5, 9.5) / 100
+    crudos = [muestras.gauss(peso, peso * cv) for _ in range(50)]
+    ajuste = peso - sum(crudos) / len(crudos)
+    pesos = [round(p + ajuste) for p in crudos]
+    e = estadisticas(pesos)
+    return {"muestra_aves": 50, "muestra_cv": e["cv"], "uniformidad_pct": e["uniformidad"], "muestra_pesos": json.dumps({"mixto": pesos})}
 
 
 def _momento(dia: date, hora: int, minuto: int = 0) -> datetime:
@@ -97,6 +116,10 @@ def _campana(db, lote: Lote, dias: int, operario: Usuario, productor: Usuario, e
             agua_l=agua,
             peso_muestra_g=peso,
             fase_alimento=(fase_del_dia(fases, dia).nombre if fase_del_dia(fases, dia) else None),
+            # Con otro generador, para no cambiar las cifras de la campaña que cita el flujo de prueba.
+            descartadas=min(muertes, extra.randint(0, 1)),
+            horas_luz=23 if dia <= 7 else 18,
+            **(_muestra_semanal(dia, peso) if dia % 7 == 0 else {}),
         )
         db.add(registro)
         db.flush()
@@ -152,6 +175,14 @@ def _atender_alertas(db, lote: Lote, hasta: date, productor: Usuario, veterinari
             alerta.estado = "ATENDIDA"
             alerta.observacion = notas.get(alerta.tipo, "Revisado.")
             alerta.atendida_por = (veterinario if alerta.requiere_veterinario else productor).id
+
+
+def _oximetria(db, lote: Lote, dias: int, veterinario: Usuario):
+    """Una medición semanal del veterinario; la saturación baja poco a poco con la edad, sin caídas bruscas."""
+    for semana, dia in enumerate(range(7, dias + 1, 7)):
+        promedio = round(88 - semana * 0.9 + extra.uniform(-0.5, 0.5), 1)
+        db.add(MedicionOxigeno(lote_id=lote.id, fecha=lote.fecha_ingreso + timedelta(days=dia), aves_medidas=10, spo2_promedio=promedio,
+                               spo2_minimo=round(promedio - extra.uniform(3, 6), 1), nota="", veterinario_id=veterinario.id))
 
 
 def _revisar_bajas(db, lote: Lote, hasta: date, veterinario: Usuario):
@@ -249,6 +280,7 @@ def preparar() -> None:
             distrito="Juliaca",
             latitud=-15.5136,
             longitud=-70.1592,
+            altitud_m=3849,
             organizacion_id=organizacion.id,
         )
         db.add(granja)
@@ -290,13 +322,15 @@ def preparar() -> None:
         ingreso_venta = round(peso_total * 6.20, 2)
         total = round(sum(costos.values()), 2)
         db.add(CierreLote(lote_id=anterior.id, fecha_cierre=fecha_faena, aves_vendidas=vivas_ant, peso_total_kg=peso_total,
-                          precio_venta_kg=6.20, ingreso_total=ingreso_venta, total_costos=total, margen=round(ingreso_venta - total, 2),
+                          precio_venta_kg=6.20, peso_canal_kg=round(peso_total * 0.74, 1), decomisos_aves=11, pododermatitis_pct=7.5,
+                          ingreso_total=ingreso_venta, total_costos=total, margen=round(ingreso_venta - total, 2),
                           observaciones="Venta a camal de Juliaca. Otros costos: gas de criadoras, cama de viruta, luz y mano de obra.", cerrado_por=productor.id,
                           created_at=_momento(fecha_faena, 17), **costos))
         anterior.estado = "CERRADO"
         anterior.fecha_cierre = fecha_faena
         _atender_alertas(db, anterior, fecha_faena, productor, veterinario)
         _revisar_bajas(db, anterior, fecha_faena, veterinario)
+        _oximetria(db, anterior, (fecha_faena - anterior.fecha_ingreso).days, veterinario)
         _evidencias_demo(db, anterior, productor)
 
         # ---------------------------------------------------------------- campaña actual (día 40)
@@ -349,6 +383,7 @@ def preparar() -> None:
                            validado_por=veterinario.id))
         _atender_alertas(db, actual, hoy - timedelta(days=2), productor, veterinario)
         _revisar_bajas(db, actual, hoy - timedelta(days=2), veterinario)
+        _oximetria(db, actual, 40, veterinario)
         _evidencias_demo(db, actual, productor)
 
         db.commit()

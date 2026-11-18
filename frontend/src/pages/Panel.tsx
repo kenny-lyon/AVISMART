@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, fecha, num, type ClimaExterior, type Panel } from "../api";
+import { api, fecha, haceCuanto, num, type ClimaExterior, type Panel } from "../api";
 import { useAuth } from "../auth";
 import { Ayuda, Campo, DrawerForm, Icon, PageHeader, Panel as Caja, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
 import { valorCampo } from "../textos";
+import { EstadoSensor } from "../components/SensorGalpon";
 
 const DICTAMEN: Record<string, string> = { NORMAL: "Normal", VISITA: "Visita programada", BROTE: "Posible brote" };
 
@@ -172,6 +173,9 @@ export default function PanelPage() {
         </div>
       )}
 
+      {panel.prediccion && <PrediccionLote prediccion={panel.prediccion} uniformidad={panel.uniformidad} />}
+      {(panel.pesaje.ganancia || panel.pesaje.ultima_muestra || panel.balanza) && <PesajeLote pesaje={panel.pesaje} balanza={panel.balanza} />}
+
       <div className="rejilla dos">
         <Caja
           titulo={
@@ -233,12 +237,23 @@ export default function PanelPage() {
                   <div><strong>{panel.lectura.temperatura.toFixed(1)} °C</strong><span>temperatura</span></div>
                   <div><strong>{panel.lectura.humedad.toFixed(0)} %</strong><span>humedad</span></div>
                 </div>
-                <p className="muted" style={{ margin: 0, fontSize: 13 }}>Última lectura: {fecha(panel.lectura.fecha_hora)} {panel.lectura.fecha_hora.slice(11, 16)}</p>
+                <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                  Última lectura: {fecha(panel.lectura.fecha_hora)} {panel.lectura.fecha_hora.slice(11, 16)} · {panel.lectura.origen === "SENSOR" ? "sensor del galpón" : "registro manual"}
+                </p>
+                {panel.sensor.activo && <p style={{ margin: "6px 0 0" }}><EstadoSensor sensor={panel.sensor} /></p>}
+                {(panel.lectura.co2_ppm != null || panel.lectura.nh3_ppm != null) && (
+                  <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>
+                    Aire: {panel.lectura.co2_ppm != null && `CO₂ ${num(panel.lectura.co2_ppm)} ppm`}
+                    {panel.lectura.co2_ppm != null && panel.lectura.nh3_ppm != null && " · "}
+                    {panel.lectura.nh3_ppm != null && `amoníaco ${num(panel.lectura.nh3_ppm, 1)} ppm`}
+                  </p>
+                )}
               </>
             ) : (
               <p className="muted" style={{ margin: 0 }}>Todavía no hay lecturas del galpón.</p>
             )}
             <ClimaZona exterior={exterior} lectura={panel.lectura} tmin={panel.temp_min} tmax={panel.temp_max} />
+            {panel.altitud_m != null && <p className="muted clima-zona-nota">Altitud de la granja: {num(panel.altitud_m)} m s. n. m.</p>}
           </Caja>
         </div>
       </div>
@@ -324,6 +339,149 @@ export default function PanelPage() {
         )}
       </DrawerForm>
     </>
+  );
+}
+
+/** Hacia dónde va el lote si sigue como en los últimos días. */
+function PrediccionLote({ prediccion: p, uniformidad }: { prediccion: NonNullable<Panel["prediccion"]>; uniformidad: Panel["uniformidad"] }) {
+  if (!p.disponible) return <div className="aviso info" style={{ marginBottom: 16 }}>{p.motivo} La predicción ya no aplica: toca planificar la saca.</div>;
+  const diferencia = p.diferencia_objetivo_g;
+  return (
+    <Caja
+      className="panel-separado"
+      titulo={
+        <>
+          Predicción a la saca
+          <Ayuda titulo="Cómo se calcula">
+            Toma la <b>curva de la línea</b> y la ajusta por cómo viene el lote en sus últimos {p.dias_usados} registros. La mortalidad proyecta las
+            bajas recientes sobre los días que faltan. Es una estimación: mientras más días registrados, más confiable.
+          </Ayuda>
+        </>
+      }
+      descripcion={`Si el lote sigue como en los últimos días · faltan ${p.dias_restantes} días para el día ${p.edad_saca} · confianza ${p.confianza}`}
+    >
+      <div className="prediccion">
+        <div>
+          <span>Peso a la saca</span>
+          <strong>{num(p.peso_g)} g</strong>
+          <small>entre {num(p.peso_min_g)} y {num(p.peso_max_g)} g</small>
+        </div>
+        {p.peso_objetivo_g != null && diferencia != null && (
+          <div className={diferencia < 0 ? "bajo" : "bien"}>
+            <span>Frente a la meta de {num(p.peso_objetivo_g)} g</span>
+            <strong>{diferencia >= 0 ? "+" : "−"}{num(Math.abs(diferencia))} g</strong>
+            <small>{diferencia < 0 ? "por debajo de la meta" : "cumple la meta"}</small>
+          </div>
+        )}
+        <div>
+          <span>Mortalidad final</span>
+          <strong>{p.mortalidad_final_pct != null ? `${num(p.mortalidad_final_pct, 2)} %` : "—"}</strong>
+          <small>quedarían {num(p.aves_finales)} aves</small>
+        </div>
+        {uniformidad && (
+          <div>
+            <span>Uniformidad del lote</span>
+            <strong>{num(uniformidad.pct)} %</strong>
+            <small>{uniformidad.aves} aves pesadas el {fecha(uniformidad.fecha)}</small>
+          </div>
+        )}
+      </div>
+    </Caja>
+  );
+}
+
+/** Ganancia diaria frente a la curva y cómo se reparte el peso en la última muestra. */
+function PesajeLote({ pesaje, balanza }: { pesaje: Panel["pesaje"]; balanza: Panel["balanza"] }) {
+  const g = pesaje.ganancia;
+  const m = pesaje.ultima_muestra;
+  const individual = m?.tipo === "INDIVIDUAL" ? m : null;
+  const mayor = individual ? Math.max(...individual.histograma.map((f) => f.aves), 1) : 1;
+  return (
+    <Caja
+      className="panel-separado"
+      titulo={
+        <>
+          Pesaje del lote
+          <Ayuda titulo="Cómo leer el pesaje">
+            La <b>ganancia diaria</b> compara cuántos gramos subió cada ave por día con lo que marca la curva de la línea en esos mismos días.
+            Por debajo del 90 % el lote se está atrasando. El <b>CV</b> mide qué tan parejo está el lote: 6–8 % es bueno y más de{" "}
+            {pesaje.cv_alto} % es un lote disparejo. Las <b>barras</b> muestran cuántas aves de la muestra cayeron en cada rango de peso; las
+            verdes están dentro de ±10 % del promedio.
+          </Ayuda>
+        </>
+      }
+      descripcion={m
+        ? `Última muestra: ${fecha(m.fecha)} · ${m.aves} aves · ${m.tipo === "GRUPO" ? "pesaje en grupo" : m.origen === "BALANZA" ? "balanza automática" : "ave por ave"}`
+        : "Ganancia de los últimos días"}
+    >
+      {balanza && (
+        <div className="balanza-hoy">
+          <span>
+            <b>Balanza automática</b>{" "}
+            <span className={`sensor-chip ${balanza.en_linea ? "en-linea" : "sin-senal"}`}>
+              {balanza.en_linea ? "En línea" : "Sin señal"}{balanza.ultimo_envio ? ` · ${haceCuanto(balanza.ultimo_envio)}` : ""}
+            </span>
+          </span>
+          <span>
+            Hoy: <b>{num(balanza.pesadas)}</b> pesadas, <b>{num(balanza.validas)}</b> válidas
+            {balanza.descartadas && balanza.pesadas > balanza.validas &&
+              ` (descartadas: ${balanza.descartadas.LIVIANA} de un ave subiendo o bajando, ${balanza.descartadas.DOBLE} de dos aves juntas)`}
+            {balanza.estadisticas && <> · promedio <b>{num(balanza.estadisticas.promedio)} g</b> · CV {num(balanza.estadisticas.cv, 1)} %</>}
+          </span>
+        </div>
+      )}
+      <div className="prediccion">
+        {g && (
+          <div className={g.pct < 90 ? "bajo" : "bien"}>
+            <span>Ganancia diaria (días {g.desde_dia}–{g.hasta_dia})</span>
+            <strong>{num(g.real_g, 1)} g/día</strong>
+            <small>la curva espera {num(g.meta_g, 1)} g/día · {num(g.pct)} %</small>
+          </div>
+        )}
+        {individual && (
+          <>
+            <div className={individual.cv > pesaje.cv_alto ? "bajo" : "bien"}>
+              <span>CV de la muestra</span>
+              <strong>{num(individual.cv, 1)} %</strong>
+              <small>{individual.cv > pesaje.cv_alto ? "lote disparejo" : individual.cv <= 8 ? "lote parejo" : "aceptable"} · uniformidad {num(individual.uniformidad)} %</small>
+            </div>
+            <div>
+              <span>Rango de pesos</span>
+              <strong>{num(individual.minimo)}–{num(individual.maximo)} g</strong>
+              <small>promedio {num(individual.promedio)} g · desviación {num(individual.de)} g</small>
+            </div>
+          </>
+        )}
+        {m?.tipo === "GRUPO" && (
+          <div>
+            <span>Peso por ave</span>
+            <strong>{num(m.promedio)} g</strong>
+            <small>{m.grupos.length} pesada(s) en grupo · sin uniformidad</small>
+          </div>
+        )}
+        {individual?.por_sexo &&
+          (["machos", "hembras"] as const).map((s) =>
+            individual.por_sexo![s] ? (
+              <div key={s}>
+                <span>{s === "machos" ? "Machos" : "Hembras"}</span>
+                <strong>{num(individual.por_sexo![s]!.promedio)} g</strong>
+                <small>{individual.por_sexo![s]!.aves} aves · CV {num(individual.por_sexo![s]!.cv, 1)} %</small>
+              </div>
+            ) : null,
+          )}
+      </div>
+      {individual && (
+        <div className="histograma" role="img" aria-label="Cantidad de aves por rango de peso">
+          {individual.histograma.map((f) => (
+            <div key={f.desde_g} className={f.en_rango ? "en-rango" : ""} title={`${num(f.desde_g)}–${num(f.hasta_g)} g: ${f.aves} ave(s)`}>
+              <b>{f.aves || ""}</b>
+              <i style={{ height: `calc((100% - 16px) * ${f.aves / mayor})` }} />
+              <span>{num(f.desde_g)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Caja>
   );
 }
 

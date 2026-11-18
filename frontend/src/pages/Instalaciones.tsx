@@ -4,6 +4,7 @@ import { api, num, type Galpon, type Granja } from "../api";
 import { Campo, DrawerForm, Icon, PageHeader, Panel, Seccion, Vacio, mensajeError, useToast } from "../components/ui";
 import { useLote } from "../lote";
 import UbicacionGranja, { type Ubicacion } from "../components/UbicacionGranja";
+import { EstadoSensor, SensorGalpon } from "../components/SensorGalpon";
 import { LARGO_NOMBRE, sinCerosIzquierda, textoDe } from "../textos";
 
 const SIN_UBICACION: Ubicacion = { departamento: "", provincia: "", distrito: "", latitud: null, longitud: null };
@@ -37,6 +38,9 @@ export default function Instalaciones() {
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
   const granjas = resumen?.granjas ?? [];
+  // Se busca en el resumen para que el estado del sensor se actualice al activarlo.
+  const [sensorDe, setSensorDe] = useState<number | null>(null);
+  const galponSensor = granjas.flatMap((g) => g.galpones).find((g) => g.id === sensorDe) ?? null;
   const lotesActivos = (galponId: number) => (resumen?.lotes ?? []).filter((l) => l.galpon_id === galponId && l.estado === "ACTIVO");
 
   function abrir(e: Edicion) {
@@ -148,7 +152,7 @@ export default function Instalaciones() {
               <div className="tabla-wrap">
                 <table>
                   <thead>
-                    <tr><th>Galpón</th><th>Capacidad</th><th>Ocupación actual</th><th /></tr>
+                    <tr><th>Galpón</th><th>Capacidad</th><th>Ocupación actual</th><th>Sensor</th><th /></tr>
                   </thead>
                   <tbody>
                     {granja.galpones.map((galpon) => {
@@ -159,7 +163,9 @@ export default function Instalaciones() {
                           <td className="celda-principal"><strong>{galpon.nombre}</strong></td>
                           <td className="num">{num(galpon.capacidad)} aves</td>
                           <td>{activos.length ? `${activos.length} lote(s) activo(s) · ${num(aves)} pollitos` : <span className="muted">Libre</span>}</td>
+                          <td><EstadoSensor sensor={galpon.sensor} /></td>
                           <td className="acciones">
+                            <button className="link-button" type="button" onClick={() => setSensorDe(galpon.id)}>Sensor</button>
                             <button className="link-button" type="button" onClick={() => abrir({ tipo: "galpon", granja, galpon })}>Editar</button>
                           </td>
                         </tr>
@@ -222,6 +228,8 @@ export default function Instalaciones() {
           )}
         </Seccion>
       </DrawerForm>
+
+      <SensorGalpon galpon={galponSensor} onCerrar={() => setSensorDe(null)} onCambio={recargar} />
     </>
   );
 }

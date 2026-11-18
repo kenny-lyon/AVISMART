@@ -21,7 +21,7 @@ const RECEPCION_VACIA = {
   edadSaca: "42",
   observaciones: "",
 };
-const CIERRE_VACIO = { fecha: "", aves: "", peso: "", precio: "", pollitos: "", alimento: "", sanidad: "", otros: "0", observaciones: "" };
+const CIERRE_VACIO = { fecha: "", aves: "", peso: "", precio: "", pollitos: "", alimento: "", sanidad: "", otros: "0", observaciones: "", canal: "", decomisos: "", pododermatitis: "" };
 
 type CatalogoLotes = {
   lineas: { nombre: string; curva: [number, number][] }[];
@@ -186,6 +186,9 @@ export default function Lotes() {
           costo_sanidad: Number(cierre.sanidad),
           otros_costos: Number(cierre.otros),
           observaciones: cierre.observaciones,
+          peso_canal_kg: cierre.canal === "" ? null : Number(cierre.canal),
+          decomisos_aves: cierre.decomisos === "" ? null : Number(cierre.decomisos),
+          pododermatitis_pct: cierre.pododermatitis === "" ? null : Number(cierre.pododermatitis),
         }),
       });
       await recargar();
@@ -471,6 +474,17 @@ export default function Lotes() {
           </Campo>
           <Campo label="Precio de venta por kg (S/)">
             <input type="number" min="0.01" max="50" step="0.01" {...campoCierre("precio")} required />
+          </Campo>
+        </Seccion>
+        <Seccion titulo="Datos del camal (opcional)">
+          <Campo label="Peso de canal (kg)" ayuda="Peso de las aves ya procesadas. Sirve para calcular el rendimiento.">
+            <input type="number" min="0.01" max="600000" step="0.01" {...campoCierre("canal")} />
+          </Campo>
+          <Campo label="Aves decomisadas" ayuda="Aves rechazadas en el camal.">
+            <input type="number" min="0" {...campoCierre("decomisos")} />
+          </Campo>
+          <Campo label="Lesiones en patas (%)" ayuda="Pododermatitis: porcentaje de aves con lesiones en las patas.">
+            <input type="number" min="0" max="100" step="0.1" {...campoCierre("pododermatitis")} />
           </Campo>
         </Seccion>
         <Seccion titulo="Costos de la campaña (S/)">

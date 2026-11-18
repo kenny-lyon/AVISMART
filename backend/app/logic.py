@@ -205,6 +205,10 @@ def evaluar_registro(db: Session, lote: Lote, registro: RegistroDiario) -> list[
     return nuevas
 
 
+LIMITE_CO2_PPM = 3000
+LIMITE_NH3_PPM = 25
+
+
 def evaluar_clima(db: Session, lote: Lote, lectura: LecturaAmbiental) -> list[Alerta]:
     nuevas: list[Alerta] = []
     dia = dia_vida(lote, lectura.fecha_hora.date())
@@ -234,6 +238,11 @@ def evaluar_clima(db: Session, lote: Lote, lectura: LecturaAmbiental) -> list[Al
                 False,
             )
         )
+    # Calidad del aire: solo si el sensor del galpón tiene esos módulos.
+    if lectura.co2_ppm is not None and lectura.co2_ppm > LIMITE_CO2_PPM and not _existe_alerta(db, lote.id, "AMBIENTE", hoy, "CO₂"):
+        nuevas.append(_crear(db, lote.id, "AMBIENTE", f"CO₂ de {lectura.co2_ppm:.0f} ppm: supera {LIMITE_CO2_PPM} ppm. Aumenta la ventilación.", False))
+    if lectura.nh3_ppm is not None and lectura.nh3_ppm > LIMITE_NH3_PPM and not _existe_alerta(db, lote.id, "AMBIENTE", hoy, "Amoníaco"):
+        nuevas.append(_crear(db, lote.id, "AMBIENTE", f"Amoníaco de {lectura.nh3_ppm:.0f} ppm: supera {LIMITE_NH3_PPM} ppm. Revisa la cama y la ventilación.", False))
     return nuevas
 
 
@@ -315,6 +324,8 @@ def indicadores(db: Session, lote: Lote) -> dict:
                 "fecha_hora": lectura.fecha_hora.isoformat(timespec="minutes"),
                 "temp_exterior": lectura.temp_exterior,
                 "humedad_exterior": lectura.humedad_exterior,
+                "co2_ppm": lectura.co2_ppm,
+                "nh3_ppm": lectura.nh3_ppm,
             }
             if lectura
             else None

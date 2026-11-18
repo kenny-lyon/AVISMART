@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api, avisarCambios, fecha, type Organizacion, type SolicitudContacto, type Usuario } from "../../api";
 import { DrawerCredencial, type Credencial } from "../../components/Cuentas";
 import { Campo, DrawerForm, Estado, Icon, PageHeader, Panel, Seccion, Tabs, Vacio, mensajeError, useToast } from "../../components/ui";
-import { LARGO_NOMBRE, textoDe } from "../../textos";
+import { LARGO_NOMBRE, soloCelular, textoDe } from "../../textos";
 
 type Alta = { organizacion: Organizacion; usuario: Usuario; clave_temporal: string; correo_enviado: boolean };
 
@@ -161,7 +161,7 @@ export default function Clientes() {
             <input type="email" value={form.productorEmail} onChange={(e) => setForm({ ...form, productorEmail: e.target.value })} required />
           </Campo>
           <Campo label="Celular con WhatsApp (opcional)" ayuda="Si falta, el productor lo completará al entrar.">
-            <input type="tel" inputMode="tel" maxLength={20} value={form.productorTelefono} onChange={(e) => setForm({ ...form, productorTelefono: e.target.value })} placeholder="987 654 321" />
+            <input type="tel" inputMode="numeric" pattern="9[0-9]{8}" title="Celular de 9 dígitos que empieza con 9" value={form.productorTelefono} onChange={(e) => setForm({ ...form, productorTelefono: soloCelular(e.target.value) })} placeholder="987654321" />
           </Campo>
           <Campo label="Correo de respaldo (opcional)">
             <input type="email" maxLength={160} value={form.productorRespaldo} onChange={(e) => setForm({ ...form, productorRespaldo: e.target.value })} placeholder="nombre@gmail.com" />

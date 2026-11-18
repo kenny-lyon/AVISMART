@@ -44,6 +44,21 @@ def ensure_schema() -> None:
             conn.execute(text("ALTER TABLE galpones ADD COLUMN camara_modo VARCHAR(20) DEFAULT 'SIMULADA'"))
         if "camara_activa" not in cols:
             conn.execute(text("ALTER TABLE galpones ADD COLUMN camara_activa INTEGER DEFAULT 1"))
+        for tabla, columnas in (
+            ("granjas", (("altitud_m", "FLOAT"),)),
+            ("cierres_lote", (("peso_canal_kg", "FLOAT"), ("decomisos_aves", "INTEGER"), ("pododermatitis_pct", "FLOAT"))),
+            ("registros_diarios", (("descartadas", "INTEGER DEFAULT 0"), ("horas_luz", "FLOAT"), ("muestra_aves", "INTEGER"),
+                                   ("muestra_cv", "FLOAT"), ("uniformidad_pct", "FLOAT"), ("muestra_pesos", "TEXT"))),
+            ("lecturas_ambientales", (("co2_ppm", "FLOAT"), ("nh3_ppm", "FLOAT"), ("agua_l", "FLOAT"))),
+        ):
+            existentes = {row[1] for row in conn.execute(text(f"PRAGMA table_info({tabla})")).fetchall()}
+            for columna, tipo in columnas:
+                if existentes and columna not in existentes:
+                    conn.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}"))
+        galpon_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(galpones)")).fetchall()}
+        for columna, tipo in (("sensor_clave_hash", "VARCHAR(64)"), ("sensor_ultimo_envio", "DATETIME")):
+            if galpon_cols and columna not in galpon_cols:
+                conn.execute(text(f"ALTER TABLE galpones ADD COLUMN {columna} {tipo}"))
         lectura_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(lecturas_ambientales)")).fetchall()}
         for columna in ("temp_exterior", "humedad_exterior"):
             if lectura_cols and columna not in lectura_cols:

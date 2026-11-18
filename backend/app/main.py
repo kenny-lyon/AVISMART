@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 import os
 import secrets
@@ -7,6 +8,8 @@ from datetime import date, datetime, timedelta
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from statistics import mean, pstdev
+
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,7 +58,7 @@ from .models import (
     Usuario,
     Vacunacion,
 )
-from . import clima_local, evidencias, notifications, revision_bajas
+from . import balanza, clima_local, evidencias, iot, notifications, oximetria, pesaje, prediccion, revision_bajas
 from .textos import GuiaRemision, NombreLugar, NombreLugarOpcional, NombrePersona
 from .notifications import estado_telegram, notificar_alertas, probar_telegram
 from .security import (
@@ -95,6 +98,9 @@ _arranque()
 app = FastAPI(title="AviSmart")
 app.include_router(evidencias.router)
 app.include_router(revision_bajas.router)
+app.include_router(iot.router)
+app.include_router(balanza.router)
+app.include_router(oximetria.router)
 
 # Nombres legibles de los campos para los mensajes de validación.
 CAMPOS = {
@@ -190,6 +196,25 @@ class RegistroIn(BaseModel):
     fase_alimento: str = Field(default="", max_length=30)
     # Evidencias opcionales (bajas, consumo y pesaje) subidas antes como temporales.
     adjuntos: list[int] = Field(default_factory=list, max_length=15)
+    descartadas: int = Field(default=0, ge=0)
+    horas_luz: float | None = Field(default=None, ge=0, le=24)
+    # Pesos individuales de la muestra (g): con ellos se calcula el promedio y la uniformidad.
+    pesos_muestra: list[float] = Field(default_factory=list, max_length=200)
+    # O bien separados por sexo…
+    pesos_machos: list[float] = Field(default_factory=list, max_length=200)
+    pesos_hembras: list[float] = Field(default_factory=list, max_length=200)
+    # …o pesaje en grupo (días 0 a 21): varias pesadas de N aves juntas.
+    grupos: list["GrupoPesaje"] = Field(default_factory=list, max_length=30)
+    # …o las pesadas válidas que registró ese día la balanza automática del galpón.
+    usar_balanza: bool = False
+
+
+class GrupoPesaje(BaseModel):
+    aves: int = Field(ge=1, le=500)
+    kg: float = Field(gt=0, le=1000)
+
+
+RegistroIn.model_rebuild()
 
 
 class ClimaIn(BaseModel):
@@ -236,6 +261,9 @@ class CierreIn(BaseModel):
     costo_sanidad: float = Field(ge=0, le=10_000_000)
     otros_costos: float = Field(default=0, ge=0, le=10_000_000)
     observaciones: str = Field(default="", max_length=1000)
+    peso_canal_kg: float | None = Field(default=None, gt=0, le=600_000)
+    decomisos_aves: int | None = Field(default=None, ge=0)
+    pododermatitis_pct: float | None = Field(default=None, ge=0, le=100)
 
 
 class CambioClaveIn(BaseModel):
@@ -412,7 +440,7 @@ def _usuario(u: Usuario) -> dict:
 
 
 def _galpon(g: Galpon) -> dict:
-    return {"id": g.id, "nombre": g.nombre, "capacidad": g.capacidad, "granja_id": g.granja_id, "granja": g.granja.nombre}
+    return {"id": g.id, "nombre": g.nombre, "capacidad": g.capacidad, "granja_id": g.granja_id, "granja": g.granja.nombre, "sensor": iot.estado(g)}
 
 
 def _granja(g: Granja) -> dict:
@@ -425,6 +453,7 @@ def _granja(g: Granja) -> dict:
         "distrito": g.distrito,
         "latitud": g.latitud,
         "longitud": g.longitud,
+        "altitud_m": g.altitud_m,
         "galpones": [_galpon(x) for x in sorted(g.galpones, key=lambda x: x.id)],
     }
 
@@ -604,6 +633,9 @@ def _cierre(c: CierreLote) -> dict:
         "costo_alimento": c.costo_alimento,
         "costo_sanidad": c.costo_sanidad,
         "otros_costos": c.otros_costos,
+        "peso_canal_kg": c.peso_canal_kg,
+        "decomisos_aves": c.decomisos_aves,
+        "pododermatitis_pct": c.pododermatitis_pct,
         "total_costos": c.total_costos,
         "margen": c.margen,
         "observaciones": c.observaciones,
@@ -653,6 +685,8 @@ def contacto_config():
 
 def _telefono_peru(valor: str) -> str | None:
     """Teléfono opcional: celular peruano de 9 dígitos que empieza con 9 (acepta +51, espacios y guiones)."""
+    if any(not (c.isdigit() or c in " +-") for c in valor):
+        raise HTTPException(status_code=400, detail="El celular solo puede tener números")
     digitos = "".join(c for c in valor if c.isdigit())
     if not digitos:
         return None
@@ -1126,6 +1160,8 @@ def _camara(db: Session, galpon: Galpon, lote: Lote | None = None) -> dict:
         "nombre": galpon.camara_nombre or "Cámara principal",
         "modo": galpon.camara_modo or "SIMULADA",
         "activa": bool(galpon.camara_activa if galpon.camara_activa is not None else 1),
+        "sensor": iot.estado(galpon),
+        "foto": iot.ultima_foto(db, galpon.id),
         "lote_id": lote.id if lote else None,
         "lote": f"{lote.linea} · día {dia_vida(lote)}" if lote else None,
         "granja": galpon.granja.nombre if galpon.granja else None,
@@ -1134,6 +1170,7 @@ def _camara(db: Session, galpon: Galpon, lote: Lote | None = None) -> dict:
             {
                 "temperatura": lectura.temperatura,
                 "humedad": lectura.humedad,
+                "origen": lectura.origen,
                 "fecha_hora": lectura.fecha_hora.isoformat(timespec="minutes"),
             }
             if lectura
@@ -1151,6 +1188,18 @@ def panel(lote_id: int, db: Session = Depends(get_db), usuario: Usuario = Depend
         notificar_alertas(db, nuevas)
     data = indicadores(db, lote)
     data["lote"] = _lote(lote)
+    data["sensor"] = iot.estado(lote.galpon)
+    data["altitud_m"] = lote.galpon.granja.altitud_m
+    registros = sorted(lote.registros, key=lambda r: r.fecha)
+    data["prediccion"] = prediccion.predecir(lote, registros, dia_vida(lote))
+    con_muestra = [r for r in registros if r.uniformidad_pct is not None]
+    data["uniformidad"] = (
+        {"pct": con_muestra[-1].uniformidad_pct, "cv": con_muestra[-1].muestra_cv, "aves": con_muestra[-1].muestra_aves, "fecha": con_muestra[-1].fecha.isoformat()}
+        if con_muestra else None
+    )
+    data["pesaje"] = pesaje.resumen(lote, registros)
+    data["balanza"] = balanza.resumen(db, lote) if lote.estado == "ACTIVO" else None
+    data["agua_medidor_hoy_l"] = iot.agua_de_hoy(db, lote.galpon_id)
     data["umbral_mortalidad"] = umbral_mortalidad(db, organizacion_de(usuario))
     data["carencias"] = carencias_activas(db, lote.id)
     fase = fase_del_dia(plan_alimento(db, lote), dia_vida(lote))
@@ -1187,6 +1236,9 @@ def clima_exterior(lote_id: int, db: Session = Depends(get_db), usuario: Usuario
     clima = clima_local.consultar(granja.latitud, granja.longitud)
     if clima is None:
         return {"disponible": False, "motivo": "No se pudo consultar el clima de la zona en este momento."}
+    if clima.get("altitud_m") is not None and granja.altitud_m != clima["altitud_m"]:
+        granja.altitud_m = clima["altitud_m"]
+        db.commit()
     return {"disponible": True, "ubicacion": granja.ubicacion, "latitud": granja.latitud, "longitud": granja.longitud, **clima}
 
 
@@ -1226,12 +1278,26 @@ def crear_registro(
         raise HTTPException(status_code=400, detail=f"{body.agua_l:g} L de agua para {vivas} aves son más de 800 mL por ave al día. Revisa el dato")
     edad = (body.fecha - lote.fecha_ingreso).days
     esperado = peso_esperado(edad, lote.linea)
-    if not esperado * 0.4 <= body.peso_muestra_g <= esperado * 2:
+    if body.usar_balanza:
+        if body.pesos_muestra or body.pesos_machos or body.pesos_hembras or body.grupos:
+            raise HTTPException(status_code=400, detail="Usa los pesos de la balanza o los anotados a mano, no los dos")
+        validas, _, _ = balanza.pesos_del_dia(db, lote, body.fecha)
+        if len(validas) < balanza.MIN_VALIDAS:
+            raise HTTPException(status_code=400, detail="La balanza todavía no tiene 5 pesadas válidas de ese día")
+        muestra = pesaje.armar_muestra(balanza.muestra(validas), [], [], [])
+        muestra["guardar"]["origen"] = "BALANZA"
+    else:
+        muestra = pesaje.armar_muestra(body.pesos_muestra, body.pesos_machos, body.pesos_hembras, [(g.aves, g.kg) for g in body.grupos])
+    peso_revisar = muestra["promedio"] if muestra else body.peso_muestra_g
+    if not esperado * 0.4 <= peso_revisar <= esperado * 2:
         raise HTTPException(
             status_code=400,
-            detail=f"Un peso promedio de {body.peso_muestra_g:g} g no es posible para un pollo de {edad} días (la curva {lote.linea} espera cerca de {esperado:.0f} g). Revisa el dato",
+            detail=f"Un peso promedio de {peso_revisar:g} g no es posible para un pollo de {edad} días (la curva {lote.linea} espera cerca de {esperado:.0f} g). Revisa el dato",
         )
 
+    if body.descartadas > body.mortalidad:
+        raise HTTPException(status_code=400, detail="Las aves sacrificadas no pueden ser más que las bajas del día")
+    peso_muestra = muestra["promedio"] if muestra else body.peso_muestra_g
     fase = body.fase_alimento.strip()
     if fase and fase not in catalogo.NOMBRES_FASE:
         raise HTTPException(status_code=400, detail="El tipo de alimento no es válido")
@@ -1251,8 +1317,14 @@ def crear_registro(
         mortalidad=body.mortalidad,
         alimento_kg=body.alimento_kg,
         agua_l=body.agua_l,
-        peso_muestra_g=body.peso_muestra_g,
+        peso_muestra_g=peso_muestra,
         fase_alimento=fase,
+        descartadas=body.descartadas,
+        horas_luz=body.horas_luz,
+        muestra_aves=muestra["aves"] if muestra else None,
+        muestra_cv=muestra["cv"] if muestra else None,
+        uniformidad_pct=muestra["uniformidad"] if muestra else None,
+        muestra_pesos=json.dumps(muestra["guardar"]) if muestra else None,
     )
     db.add(registro)
     try:
@@ -1263,6 +1335,8 @@ def crear_registro(
         raise HTTPException(status_code=400, detail="Ya hay un registro para esa fecha")
     evidencias.vincular_registro(db, lote, registro.id, body.adjuntos, usuario)
     nuevas = evaluar_registro(db, lote, registro)
+    previos = sorted([r for r in lote.registros if r.id != registro.id] + [registro], key=lambda r: r.fecha)
+    nuevas += pesaje.evaluar(db, lote, registro, [r for r in previos if r.fecha <= registro.fecha])
     db.commit()
     notificar_alertas(db, nuevas)
     return {"ok": True, "alertas": [_alerta(a) for a in nuevas]}
@@ -1285,7 +1359,7 @@ def crear_clima(
         fecha_hora=datetime.now().replace(second=0, microsecond=0),
         temperatura=body.temperatura,
         humedad=body.humedad,
-        origen="SIMULADO",
+        origen="MANUAL",
         temp_exterior=exterior["temperatura"] if exterior else None,
         humedad_exterior=exterior["humedad"] if exterior else None,
     )
@@ -2175,6 +2249,10 @@ def cerrar_lote(
     if body.aves_vendidas > datos["aves_vivas"]:
         raise HTTPException(status_code=400, detail="Las aves vendidas superan las aves vivas")
 
+    if body.peso_canal_kg is not None and body.peso_canal_kg > body.peso_total_kg:
+        raise HTTPException(status_code=400, detail="El peso de la canal no puede ser mayor que el peso vivo vendido")
+    if body.decomisos_aves is not None and body.decomisos_aves > body.aves_vendidas:
+        raise HTTPException(status_code=400, detail="Los decomisos no pueden ser más que las aves vendidas")
     ingreso = round(body.peso_total_kg * body.precio_venta_kg, 2)
     costos = round(
         body.costo_pollitos + body.costo_alimento + body.costo_sanidad + body.otros_costos,
@@ -2191,6 +2269,9 @@ def cerrar_lote(
         costo_alimento=body.costo_alimento,
         costo_sanidad=body.costo_sanidad,
         otros_costos=body.otros_costos,
+        peso_canal_kg=body.peso_canal_kg,
+        decomisos_aves=body.decomisos_aves,
+        pododermatitis_pct=body.pododermatitis_pct,
         total_costos=costos,
         margen=round(ingreso - costos, 2),
         observaciones=body.observaciones.strip(),

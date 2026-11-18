@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Usuario } from "../api";
 import { useAuth } from "../auth";
 import { Campo, Panel, Vacio, mensajeError, useToast } from "./ui";
+import { soloCelular } from "../textos";
 
 export type Acceso = { fecha: string; evento: string; ip: string | null; navegador: string; usuario?: string };
 
@@ -74,7 +75,7 @@ export default function MiCuenta() {
         <form onSubmit={guardar} className="form-grid" style={{ maxWidth: 640 }}>
           {error && <div className="aviso riesgo campo ancho">{error}</div>}
           <Campo label="Celular con WhatsApp" ayuda="9 dígitos, empieza con 9.">
-            <input type="tel" inputMode="tel" maxLength={20} value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="987 654 321" />
+            <input type="tel" inputMode="numeric" pattern="9[0-9]{8}" title="Celular de 9 dígitos que empieza con 9" value={telefono} onChange={(e) => setTelefono(soloCelular(e.target.value))} placeholder="987654321" />
           </Campo>
           <Campo label="Correo de respaldo" ayuda="Distinto al correo con el que entras.">
             <input type="email" maxLength={160} value={respaldo} onChange={(e) => setRespaldo(e.target.value)} placeholder="nombre@gmail.com" />

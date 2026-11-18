@@ -12,6 +12,9 @@ from sqlalchemy.orm import Session
 
 from .logic import clave_umbral
 from .models import (
+    FotoGalpon,
+    MedicionOxigeno,
+    PesadaBalanza,
     RevisionBajas,
     AdjuntoLote,
     AccesoUsuario,
@@ -78,6 +81,9 @@ def _consultas(db: Session, organizacion: Organizacion) -> dict:
         "fases_alimento": por_lote(FaseAlimento),
         "cambios_alimento": por_lote(CambioAlimento),
         "revisiones_bajas": por_lote(RevisionBajas),
+        "mediciones_oxigeno": por_lote(MedicionOxigeno),
+        "fotos_galpon": db.query(FotoGalpon).filter(FotoGalpon.galpon_id.in_(ids["galpones"] or [0])),
+        "pesadas_balanza": db.query(PesadaBalanza).filter(PesadaBalanza.galpon_id.in_(ids["galpones"] or [0])),
         "registros_diarios": por_lote(RegistroDiario),
         "vacunaciones": por_lote(Vacunacion),
         "tratamientos": por_lote(Tratamiento),

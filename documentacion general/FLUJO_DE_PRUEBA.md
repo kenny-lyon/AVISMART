@@ -317,6 +317,68 @@ Cuenta de plataforma.
 
 ---
 
+## 12. Sensor IoT del galpón (M7)
+
+Cuenta: `productor@avismart.local`
+
+1. **Granjas y galpones:** la columna **Sensor** muestra *Sin sensor*, *En línea · hace 1 min* o *Sin señal*. En el Galpón 01 pulsar **Sensor → Activar sensor** (o **Generar nueva clave** si ya estaba activo).
+   - **Debe verse:** la **dirección** y la **clave** del equipo (`avs_…`), con el aviso de que se muestran solo esta vez. Pulsar **Copiar**.
+2. **Encender el simulador** (hace lo mismo que el ESP32 del galpón), en una terminal dentro de `backend`:
+
+   ```
+   .venv\Scripts\python -m app.simulador_iot --clave avs_LA_CLAVE_COPIADA
+   ```
+
+   Envía una lectura por minuto, con el ciclo del día (más fría de madrugada) y una falla de vez en cuando. Para forzar la alerta: `--base 30` (galpón sobrecalentado). Se detiene con **Ctrl+C**.
+3. **Debe verse:**
+   - En la terminal, cada lectura con `ok` o `ALERTA: Temperatura … fuera del rango …`.
+   - En **Granjas y galpones** y en **Cámara**: el sensor **En línea**.
+   - En el **Panel**: la última lectura dice *"sensor del galpón"*, y las lecturas fuera de rango aparecen en **Alertas** como *Ambiente*.
+4. **Seguridad:** una clave inventada se rechaza (*"Clave de sensor no válida"*); dos envíos en menos de un minuto también (*"Envía como máximo una lectura por minuto"*); al **Desactivar** el sensor, el equipo deja de poder enviar.
+5. Si el simulador se apaga, a los 10 minutos el sensor pasa a **Sin señal**.
+6. **Aire, agua y cámara:** agregar `--aire --foto ruta\a\foto.jpg` al simulador.
+   - **Debe verse:** en el Panel, la línea *Aire: CO₂ … · amoníaco …*; en Registro del día, *"El medidor del galpón lleva … L hoy"*; en **Cámara**, la última foto en lugar de OFFLINE (si pasan 30 minutos sin fotos, vuelve a OFFLINE).
+   - Con CO₂ sobre 3000 ppm o amoníaco sobre 25 ppm aparece la alerta de **Ambiente**.
+
+El programa para el ESP32 y la ESP32-CAM, las conexiones y el contrato de datos están en `hardware/README.md`.
+
+---
+
+## 13. Datos para la predicción y la IA
+
+1. **Panel** (productor): la tarjeta **Predicción a la saca** muestra el peso estimado, su rango, la diferencia con la meta, la mortalidad final y la uniformidad. Necesita al menos 3 registros; cuando el lote pasa la edad de saca, avisa que ya no aplica.
+2. **Registro del día:**
+   - *De ellas, sacrificadas*: más que las bajas del día → *"Las aves sacrificadas no pueden ser más que las bajas del día"*.
+   - *Horas de luz*: opcional.
+   - *Pesos de cada ave*: con 5 o más pesos, el promedio se calcula solo y se muestra la uniformidad.
+3. **Vacunas y tratamientos → Oximetría** (veterinario): la lista semanal de SpO₂. Pulsar **Nueva medición** con 5 puntos o más por debajo de la anterior → al productor le llega la alerta de **Salud** *"Oxígeno en sangre en descenso…"*.
+4. **Cerrar lote:** la sección **Datos del camal** (opcional) pide peso de canal, aves decomisadas y lesiones en patas. Con esos datos, el PDF muestra el rendimiento de canal.
+5. **Altitud:** el Panel muestra la altitud de la granja, calculada con sus coordenadas.
+
+---
+
+## 14. Pesaje del lote
+
+1. **Panel:** la tarjeta **Pesaje del lote** muestra:
+   - La **ganancia diaria** de los últimos 7 días frente a la curva de la línea. En la demostración sale cerca del 98 %.
+   - El **CV**, la uniformidad, el rango de pesos y la desviación.
+   - El **histograma** de la última muestra de 50 aves. Las barras verdes son las aves dentro de ±10 % del promedio.
+2. **Registro del día → 4. Pesaje:** tiene cuatro modos. El sistema sugiere **En grupo** hasta el día 21 y **Ave por ave** desde el 21.
+   - *En grupo*: anotar `10` aves y `9.5` kg → el promedio queda en 950 g. Con **Otra pesada** se agregan más grupos.
+   - *Ave por ave*: con 5 o más pesos se calcula el promedio y la uniformidad.
+   - *Machos y hembras*: cada sexo necesita 5 pesos o más. El Panel muestra el promedio y el CV de cada uno.
+3. **Alertas de crecimiento:**
+   - Con una muestra de CV mayor a 10 % → *"Lote disparejo…"*. En la última semana antes de la saca, el mensaje advierte de los problemas en el camal.
+   - Si la ganancia de los últimos días cae por debajo del 90 % de la curva, a partir del día 7 → *"Ganancia diaria de … g en los últimos … días…"*.
+4. **Balanza automática (simulada):**
+   1. Activa el sensor del Galpón 01 en **Granjas y galpones → Sensor** y copia la clave.
+   2. Desde `backend`: `.venv\Scripts\python -m app.simulador_iot --clave avs_... --balanza 2900 --pesadas 80 --solo-balanza --veces 1`. La consola muestra, por ejemplo, *"balanza: 80 pesos, 68 válidos"*.
+   3. **Panel → Pesaje del lote:** aparece *Balanza automática · En línea*, con las pesadas del día, las válidas y las descartadas (ave subiendo o bajando, dos aves juntas), más el promedio y el CV.
+   4. **Registro del día → Pesaje:** se elige solo el modo **Balanza automática**. El peso promedio se llena con las pesadas válidas y no se puede editar. Al guardar, el Panel indica *"balanza automática"* como origen de la muestra.
+   5. Si se cambia la fecha a un día sin pesadas → aviso *"La balanza tiene 0 pesada(s) válida(s)…"*.
+
+---
+
 ## Notas
 
 - **Antes de la presentación:** correr `python -m app.demo_docente` (sección 0). Si algo se desordena durante la prueba, se vuelve a correr y todo queda igual que al inicio.

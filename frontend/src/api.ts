@@ -22,7 +22,58 @@ export type Usuario = {
   correo_alterno?: string | null;
 };
 
-export type Galpon = { id: number; nombre: string; capacidad: number; granja_id: number; granja: string };
+/** Sensor IoT del galpón: «en línea» si envió una lectura en los últimos 10 minutos. */
+export type SensorEstado = { activo: boolean; en_linea: boolean; ultimo_envio: string | null };
+
+export type Galpon = { id: number; nombre: string; capacidad: number; granja_id: number; granja: string; sensor: SensorEstado };
+
+/** Proyección del lote a la edad de saca: curva de la línea más la tendencia reciente. */
+export type EstadisticaPeso = {
+  aves: number; promedio: number; de: number; cv: number; minimo: number; maximo: number;
+  p10: number; p50: number; p90: number; uniformidad: number;
+  histograma: { desde_g: number; hasta_g: number; aves: number; en_rango: boolean }[];
+};
+
+export type MuestraPeso =
+  | ({ tipo: "INDIVIDUAL"; fecha: string; origen: "MANUAL" | "BALANZA"; por_sexo: { machos?: EstadisticaPeso; hembras?: EstadisticaPeso } | null } & EstadisticaPeso)
+  | { tipo: "GRUPO"; fecha: string; aves: number; promedio: number; grupos: { aves: number; kg: number }[] };
+
+export type Balanza = {
+  fecha: string;
+  en_linea?: boolean;
+  ultimo_envio?: string;
+  pesadas: number;
+  validas: number;
+  descartadas?: { LIVIANA: number; DOBLE: number };
+  suficiente: boolean;
+  estadisticas?: EstadisticaPeso | null;
+};
+
+export type Prediccion =
+  | { disponible: false; motivo: string }
+  | {
+      disponible: true;
+      edad_saca: number;
+      dias_restantes: number;
+      peso_g: number;
+      peso_min_g: number;
+      peso_max_g: number;
+      peso_objetivo_g: number | null;
+      diferencia_objetivo_g: number | null;
+      mortalidad_final_pct: number | null;
+      aves_finales: number;
+      dias_usados: number;
+      confianza: "baja" | "media";
+    };
+
+/** «hace 3 min», «hace 2 h», «hace 4 días». */
+export function haceCuanto(iso: string) {
+  const minutos = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (minutos < 1) return "hace un momento";
+  if (minutos < 60) return `hace ${minutos} min`;
+  if (minutos < 48 * 60) return `hace ${Math.round(minutos / 60)} h`;
+  return `hace ${Math.round(minutos / 1440)} días`;
+}
 
 export type Granja = {
   id: number;
@@ -167,7 +218,21 @@ export type Panel = {
   umbral_mortalidad: number;
   alimento_hoy: FaseAlimento | null;
   tratamientos_indicados: number;
+  sensor: SensorEstado;
+  altitud_m: number | null;
+  agua_medidor_hoy_l: number | null;
+  uniformidad: { pct: number; cv: number; aves: number; fecha: string } | null;
+  pesaje: {
+    ultima_muestra: MuestraPeso | null;
+    ganancia: { real_g: number; meta_g: number; pct: number; dias: number; desde_dia: number; hasta_dia: number } | null;
+    cv_alto: number;
+    metodo_sugerido: "GRUPO" | "INDIVIDUAL";
+  };
+  balanza: Balanza | null;
+  prediccion: Prediccion | null;
   lectura: {
+    co2_ppm: number | null;
+    nh3_ppm: number | null;
     temperatura: number;
     humedad: number;
     origen: string;
@@ -212,7 +277,9 @@ export type Camara = {
   lote: string | null;
   granja: string | null;
   ubicacion: string | null;
-  lectura: { temperatura: number; humedad: number; fecha_hora: string } | null;
+  sensor: SensorEstado;
+  foto: { fecha_hora: string } | null;
+  lectura: { temperatura: number; humedad: number; origen: string; fecha_hora: string } | null;
 };
 
 /** Clima de la zona de la granja (Open-Meteo) para comparar con el galpón. */

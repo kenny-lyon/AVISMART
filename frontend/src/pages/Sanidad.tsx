@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { api, fecha, hoyLocal, num, type Tratamiento, type Vacuna } from "../api";
 import { useAuth } from "../auth";
 import { Campo, Drawer, DrawerForm, Estado, Icon, PageHeader, Panel, Seccion, Tabs, Vacio, mensajeError, useToast } from "../components/ui";
+import Oximetria from "../components/Oximetria";
 import { useLote } from "../lote";
 import { valorCampo } from "../textos";
 
@@ -28,6 +29,7 @@ export default function Sanidad() {
   const { loteId, resumen } = useLote();
   const avisar = useToast();
   const [pestana, setPestana] = useState("tratamientos");
+  const [oximetrias, setOximetrias] = useState<number | null>(null);
   const [vacunas, setVacunas] = useState<Vacuna[]>([]);
   const [tratamientos, setTratamientos] = useState<Tratamiento[]>([]);
   const [error, setError] = useState("");
@@ -298,12 +300,15 @@ export default function Sanidad() {
             items={[
               { id: "tratamientos", label: "Tratamientos", cantidad: tratamientos.length },
               { id: "vacunas", label: "Vacunas", cantidad: vacunas.length },
+              { id: "oximetria", label: "Oximetría", cantidad: oximetrias ?? undefined },
             ]}
           />
           {esVet && (pendientesT + pendientesV > 0) && (
             <span className="muted">{pendientesT + pendientesV} registro(s) esperan tu revisión</span>
           )}
         </div>
+
+        {pestana === "oximetria" && loteId && <Oximetria loteId={loteId} esVet={esVet} onCantidad={setOximetrias} />}
 
         {pestana === "tratamientos" &&
           (tratamientos.length === 0 ? (

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import "./landing.css";
-import { LARGO_NOMBRE, alEscribir } from "../textos";
+import { LARGO_NOMBRE, alEscribir, soloCelular } from "../textos";
 
 type Turnstile = {
   render: (el: HTMLElement, opciones: Record<string, unknown>) => string;
@@ -137,8 +137,8 @@ export default function Contacto() {
                 <label>Nombre completo *<input name="nombre" required minLength={3} maxLength={LARGO_NOMBRE} onInput={alEscribir("persona")} /></label>
                 <label>Correo electrónico *<input name="email" type="email" required /></label>
                 <label>Celular (opcional)
-                  <input name="telefono" type="tel" inputMode="tel" maxLength={20} pattern="[+0-9 \-]{9,20}" placeholder="Ejm: 987 654 321"
-                    title="Celular de 9 dígitos que empieza con 9" />
+                  <input name="telefono" type="tel" inputMode="numeric" pattern="9[0-9]{8}" placeholder="Ejm: 987654321"
+                    title="Celular de 9 dígitos que empieza con 9" onInput={(e) => { e.currentTarget.value = soloCelular(e.currentTarget.value); }} />
                 </label>
                 <label>Empresa o granja avícola<input name="empresa" maxLength={LARGO_NOMBRE} onInput={alEscribir("lugar")} /></label>
                 <label>País *<input name="pais" value="Perú" readOnly aria-readonly="true" title="Por ahora atendemos solo en Perú" /></label>

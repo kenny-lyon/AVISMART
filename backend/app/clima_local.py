@@ -38,6 +38,7 @@ def consultar(latitud: float | None, longitud: float | None) -> dict | None:
         i_min = min(range(len(temps)), key=lambda i: temps[i])
         i_max = max(range(len(temps)), key=lambda i: temps[i])
         clima = {
+            "altitud_m": datos.get("elevation"),
             "temperatura": float(datos["current"]["temperature_2m"]),
             "humedad": float(datos["current"]["relative_humidity_2m"]),
             # Velocidad en km/h y dirección de donde viene el viento (grados, 0 = norte).
